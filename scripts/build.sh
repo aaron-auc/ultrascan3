@@ -211,8 +211,13 @@ else
 fi
 
 if [ -n "${US3_BUILD_JOBS:-}" ]; then
+  # Explicit override always wins
   BUILD_JOBS="$US3_BUILD_JOBS"
+elif [ "${CI:-false}" = "true" ]; then
+  # CI runners are dedicated -- use every core
+  BUILD_JOBS="$CORES"
 else
+  # Local builds: leave ~10% headroom to keep the machine usable
   BUILD_JOBS=$((CORES * 9 / 10))
   if [ "$BUILD_JOBS" -lt 1 ]; then
     BUILD_JOBS=1
@@ -410,9 +415,11 @@ if [ ! -x "$US3_VCPKG_ROOT/vcpkg" ]; then
   echo ""
   echo "Bootstrapping vcpkg at $US3_VCPKG_ROOT..."
   if [[ "$PLATFORM" == "Windows" ]]; then
-    ( cd "$US3_VCPKG_ROOT" && ./bootstrap-vcpkg.bat )
+    ( cd "$US3_VCPKG_ROOT" && ./bootstrap-vcpkg.bat -disableMetrics )
   else
-    "$US3_VCPKG_ROOT/bootstrap-vcpkg.sh"
+    # -disableMetrics suppresses the telemetry consent prompt which can
+    # stall non-interactive CI environments on first bootstrap.
+    "$US3_VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
   fi
 fi
 
@@ -574,6 +581,17 @@ if [ "$PLATFORM" == "Linux" ]; then
     "zip|zip|zip"
     "unzip|unzip|unzip"
     "patchelf|patchelf|patchelf"
+    # autotools chain: required by vcpkg ports that build with ./configure
+    # (e.g. ICU, which is a host-tool dependency pulled in by Qt)
+    # autoconf-archive has no binary; handled via apt_package alongside autoconf
+    "autoconf|autoconf autoconf-archive|autoconf autoconf-archive"
+    "automake|automake|automake"
+    "libtool|libtool|libtool"
+    # gperf: required by qtbase port for keyword hash table generation
+    "gperf|gperf|gperf"
+    # bison + flex: required by libmariadb port on Linux
+    "bison|bison|bison"
+    "flex|flex|flex"
   )
 
   # Dev packages have no binary — check for a sentinel header or .pc file
@@ -698,10 +716,17 @@ if command -v pip3 &>/dev/null; then
   fi
 fi
 
-# Helper: run pip install with the right flags for this system
+# Helper: run pip install with the right flags for this system.
+# In CI, actions/setup-python provides a managed venv where --user is not
+# only unnecessary but actively rejected. Outside CI, --user installs to
+# ~/.local which keeps the system Python clean.
 _pip_install() {
   if command -v pip3 &>/dev/null; then
-    pip3 install ${_pip_break_flag:+$_pip_break_flag} --user -q "$@" 2>/dev/null || true
+    if [ "${CI:-false}" = "true" ]; then
+      pip3 install ${_pip_break_flag:+$_pip_break_flag} -q "$@" 2>/dev/null || true
+    else
+      pip3 install ${_pip_break_flag:+$_pip_break_flag} --user -q "$@" 2>/dev/null || true
+    fi
   fi
 }
 

@@ -257,8 +257,13 @@ Write-Host ""
 # =============================================================================
 $Cores = if ($env:NUMBER_OF_PROCESSORS) { [int]$env:NUMBER_OF_PROCESSORS } else { 4 }
 if ($env:US3_BUILD_JOBS) {
+    # Explicit override always wins
     $BuildJobs = [int]$env:US3_BUILD_JOBS
+} elseif ($env:CI -eq "true") {
+    # CI runners are dedicated -- use every core
+    $BuildJobs = $Cores
 } else {
+    # Local builds: leave ~10% headroom to keep the machine usable
     $BuildJobs = [Math]::Max(1, [Math]::Floor($Cores * 0.9))
 }
 
@@ -413,8 +418,10 @@ if (-not (Test-Path (Join-Path $VcpkgRoot ".git"))) {
 
 if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
     Write-Host "Bootstrapping vcpkg at $VcpkgRoot..."
+    # -disableMetrics suppresses the telemetry consent prompt which can
+    # stall non-interactive CI environments on first bootstrap.
     Push-Location $VcpkgRoot
-    & .\bootstrap-vcpkg.bat
+    & .\bootstrap-vcpkg.bat -disableMetrics
     Pop-Location
 }
 
