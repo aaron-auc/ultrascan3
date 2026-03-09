@@ -1,0 +1,152 @@
+# =============================================================================
+# UltraScan3 On-Demand Build
+# =============================================================================
+# Manually triggered via GitHub Actions "Run workflow" UI or gh CLI.
+# Builds on any combination of platforms and produces downloadable artifacts.
+#
+# USAGE (gh CLI):
+#   gh workflow run us3-build-on-demand.yml \
+#     --field qt_variant=qt6 \
+#     --field profile=APP \
+#     --field platforms=ubuntu,macos,windows \
+#     --field clean_tier=0
+# =============================================================================
+
+name: UltraScan3 On-Demand Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to build (comma-separated: ubuntu, ubuntu-arm, macos, macos-arm, windows)"
+        required: true
+        default: "ubuntu,macos,windows"
+        type: choice
+        options:
+          - ubuntu,macos,windows
+          - ubuntu
+          - ubuntu-arm
+          - macos
+          - macos-arm
+          - windows
+          - ubuntu,macos
+          - ubuntu,windows
+          - macos,windows
+          - ubuntu,ubuntu-arm,macos,macos-arm,windows
+
+      qt_variant:
+        description: "Qt/Qwt variant"
+        required: false
+        default: qt6
+        type: choice
+        options:
+          - qt6
+          - qt5-qwt616
+          - qt5-qwt630
+
+      profile:
+        description: "Build profile"
+        required: false
+        default: APP
+        type: choice
+        options:
+          - APP
+          - TEST
+          - HPC
+
+      clean_tier:
+        description: "Clean tier: 0=incremental, 1=rebuild CMake only, 2=reinstall vcpkg deps, 3=full recompile from source"
+        required: false
+        default: "0"
+        type: choice
+        options:
+          - "0"
+          - "1"
+          - "2"
+          - "3"
+
+      artifact_retention_days:
+        description: "Artifact retention (days)"
+        required: false
+        default: "7"
+        type: choice
+        options:
+          - "3"
+          - "7"
+          - "14"
+          - "30"
+
+permissions:
+  contents: read
+
+# Each job checks whether its platform was included in the `platforms` input
+# using a contains() expression. Jobs for excluded platforms are skipped
+# cleanly without failure.
+#
+# REUSABLE WORKFLOW REF
+# ---------------------
+# Replace @main below with a full commit SHA once the reusable workflow is
+# finalised. Pinning to a SHA ensures this caller is immune to changes in
+# the reusable workflow repo.
+#
+#   Replace: @main
+#   With:    @<40-character-sha>   e.g. @a1b2c3d4e5f6...
+#
+# To get the SHA:
+#   gh api repos/ehb54/uslims_version_workflows/commits/main --jq '.sha'
+
+jobs:
+  build-ubuntu:
+    name: Ubuntu x64
+    if: contains(inputs.platforms, 'ubuntu')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@0f8de938c85bd66d4dce33f263f3606c5f1894eb
+    with:
+      runner: ubuntu-24.04
+      qt_variant: ${{ inputs.qt_variant }}
+      profile: ${{ inputs.profile }}
+      clean_tier: ${{ fromJson(inputs.clean_tier) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+
+  build-ubuntu-arm:
+    name: Ubuntu ARM64
+    if: contains(inputs.platforms, 'ubuntu-arm')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@0f8de938c85bd66d4dce33f263f3606c5f1894eb
+    with:
+      runner: ubuntu-24.04-arm
+      qt_variant: ${{ inputs.qt_variant }}
+      profile: ${{ inputs.profile }}
+      clean_tier: ${{ fromJson(inputs.clean_tier) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+
+  build-macos:
+    name: macOS x64
+    if: contains(inputs.platforms, 'macos') && !contains(inputs.platforms, 'macos-arm')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@0f8de938c85bd66d4dce33f263f3606c5f1894eb
+    with:
+      runner: macos-13
+      qt_variant: ${{ inputs.qt_variant }}
+      profile: ${{ inputs.profile }}
+      clean_tier: ${{ fromJson(inputs.clean_tier) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+
+  build-macos-arm:
+    name: macOS ARM64 (Apple Silicon)
+    if: contains(inputs.platforms, 'macos-arm')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@0f8de938c85bd66d4dce33f263f3606c5f1894eb
+    with:
+      runner: macos-15
+      qt_variant: ${{ inputs.qt_variant }}
+      profile: ${{ inputs.profile }}
+      clean_tier: ${{ fromJson(inputs.clean_tier) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+
+  build-windows:
+    name: Windows x64
+    if: contains(inputs.platforms, 'windows')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@0f8de938c85bd66d4dce33f263f3606c5f1894eb
+    with:
+      runner: windows-2022
+      qt_variant: ${{ inputs.qt_variant }}
+      profile: ${{ inputs.profile }}
+      clean_tier: ${{ fromJson(inputs.clean_tier) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
