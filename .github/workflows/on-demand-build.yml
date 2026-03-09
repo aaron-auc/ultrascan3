@@ -104,7 +104,7 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'macos-arm (macos-15)' ||
       inputs.platforms == 'macos only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@fb4a63587b4898400f80feeeb611844c44b1b1a2
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  macos-15
@@ -124,7 +124,7 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'macos-intel (macos-13)' ||
       inputs.platforms == 'macos only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@fb4a63587b4898400f80feeeb611844c44b1b1a2
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  macos-13
@@ -144,7 +144,7 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)' ||
       inputs.platforms == 'linux only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@fb4a63587b4898400f80feeeb611844c44b1b1a2
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04
@@ -164,7 +164,7 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'ubuntu-arm (ubuntu-24.04-arm)' ||
       inputs.platforms == 'linux only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@fb4a63587b4898400f80feeeb611844c44b1b1a2
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04-arm
@@ -183,7 +183,7 @@ jobs:
     if: |
       inputs.platforms == 'all' ||
       inputs.platforms == 'windows (windows-2022)'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@fb4a63587b4898400f80feeeb611844c44b1b1a2
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  windows-2022
