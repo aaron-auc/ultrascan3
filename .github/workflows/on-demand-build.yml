@@ -2,7 +2,7 @@ name: UltraScan3 On-Demand Build
 
 # Run title shown in the Actions list — no need to open the run to know what it built.
 # Example: "On-Demand [feature/hpc-fix] APP qt6 by @ehb54"
-run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.profile }} ${{ inputs.qt_variant }} by @${{ github.actor }}"
+run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.platforms }} ${{ inputs.profile }} ${{ inputs.qt_variant }} by @${{ github.actor }}"
 
 on:
   workflow_dispatch:
@@ -69,15 +69,15 @@ on:
         # 1 — --rebuild:   wipe CMake build dir, keep vcpkg cache
         # 2 — --clean:     wipe build dir + reinstall vcpkg packages for triplet
         # 3 — --clean --purge-cache: full recompile from source (slowest)
-        description: "Clean tier"
+        description: "Clean tier: incremental=reuse build dir, rebuild=wipe build dir, clean=reinstall vcpkg, clean-purge-cache=full source rebuild"
         required: true
-        default: "0"
+        default: "incremental"
         type: choice
         options:
-          - "0"
-          - "1"
-          - "2"
-          - "3"
+          - incremental
+          - rebuild
+          - clean
+          - clean-purge-cache
 
       artifact_retention_days:
         # How long GitHub keeps the build artifacts before deleting them.
@@ -104,13 +104,13 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'macos-arm (macos-15)' ||
       inputs.platforms == 'macos only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@90ec439220fb45854bb9320007501a85f4e371c5
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  macos-15
       qt_variant:              ${{ inputs.qt_variant }}
       profile:                 ${{ inputs.profile }}
-      clean_tier:              ${{ fromJson(inputs.clean_tier) }}
+      clean_tier:              ${{ inputs.clean_tier }}
       artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
@@ -124,13 +124,13 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'macos-intel (macos-13)' ||
       inputs.platforms == 'macos only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@90ec439220fb45854bb9320007501a85f4e371c5
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  macos-13
       qt_variant:              ${{ inputs.qt_variant }}
       profile:                 ${{ inputs.profile }}
-      clean_tier:              ${{ fromJson(inputs.clean_tier) }}
+      clean_tier:              ${{ inputs.clean_tier }}
       artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
@@ -144,13 +144,13 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)' ||
       inputs.platforms == 'linux only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@90ec439220fb45854bb9320007501a85f4e371c5
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04
       qt_variant:              ${{ inputs.qt_variant }}
       profile:                 ${{ inputs.profile }}
-      clean_tier:              ${{ fromJson(inputs.clean_tier) }}
+      clean_tier:              ${{ inputs.clean_tier }}
       artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
@@ -164,13 +164,13 @@ jobs:
       inputs.platforms == 'all' ||
       inputs.platforms == 'ubuntu-arm (ubuntu-24.04-arm)' ||
       inputs.platforms == 'linux only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@90ec439220fb45854bb9320007501a85f4e371c5
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04-arm
       qt_variant:              ${{ inputs.qt_variant }}
       profile:                 ${{ inputs.profile }}
-      clean_tier:              ${{ fromJson(inputs.clean_tier) }}
+      clean_tier:              ${{ inputs.clean_tier }}
       artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
@@ -183,13 +183,13 @@ jobs:
     if: |
       inputs.platforms == 'all' ||
       inputs.platforms == 'windows (windows-2022)'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@ff028a70f016d89c2fcdde1543532e0ff4ba8822
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@90ec439220fb45854bb9320007501a85f4e371c5
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  windows-2022
       qt_variant:              ${{ inputs.qt_variant }}
       profile:                 ${{ inputs.profile }}
-      clean_tier:              ${{ fromJson(inputs.clean_tier) }}
+      clean_tier:              ${{ inputs.clean_tier }}
       artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
