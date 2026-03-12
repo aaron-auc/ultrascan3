@@ -31,7 +31,7 @@ on:
         options:
           - "all"
           - "macos-arm (macos-15)"
-          - "macos-intel (macos-13)"
+          - "macos-intel (macos-15-intel)"
           - "ubuntu-x64 (ubuntu-24.04)"
           - "ubuntu-arm (ubuntu-24.04-arm)"
           - "windows (windows-2022)"
@@ -115,19 +115,19 @@ jobs:
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
   # -------------------------------------------------------------------------
-  # macOS Intel (macos-13, x86-64)
+  # macOS Intel (macos-15, x86-64)
   # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-macos-13
   # -------------------------------------------------------------------------
   build-macos-intel:
-    name: "macOS Intel (macos-13)"
+    name: "macOS Intel (macos-15-intel)"
     if: |
       inputs.platforms == 'all' ||
-      inputs.platforms == 'macos-intel (macos-13)' ||
+      inputs.platforms == 'macos-intel (macos-15-intel)' ||
       inputs.platforms == 'macos only'
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref }}
-      runner:                  macos-13
+      runner:                  macos-15-intel
       qt_variant:              ${{ inputs.qt_variant }}
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
