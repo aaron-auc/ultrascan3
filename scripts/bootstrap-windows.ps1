@@ -194,6 +194,67 @@ if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
 }
 
 # =============================================================================
+# NASM DISCOVERY / PATH SELF-HEAL
+# nasm is sometimes installed but not visible on PATH in the current session,
+# and winget layouts can vary. Search several likely locations and add the
+# containing directory to PATH if found.
+# =============================================================================
+function Find-NasmExe {
+    $cmd = Get-Command nasm -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) {
+        return $cmd.Source
+    }
+
+    $candidates = @(
+        "$env:LOCALAPPDATA\bin\NASM\nasm.exe",
+        "$env:ProgramFiles\NASM\nasm.exe",
+        "${env:ProgramFiles(x86)}\NASM\nasm.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Links\nasm.exe",
+        "$env:LOCALAPPDATA\Microsoft\WindowsApps\nasm.exe",
+        "$env:USERPROFILE\vcpkg\downloads\tools\nasm\nasm-3.01\nasm.exe",
+        "$env:USERPROFILE\vcpkg-downloads\tools\nasm\nasm-3.01\nasm.exe"
+    )
+
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path $p)) {
+            return $p
+        }
+    }
+
+    $searchRoots = @(
+        (Join-Path $env:LOCALAPPDATA "bin\NASM"),
+        (Join-Path $env:USERPROFILE "vcpkg\downloads\tools\nasm"),
+        (Join-Path $env:USERPROFILE "vcpkg-downloads\tools\nasm")
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
+    foreach ($root in $searchRoots) {
+        $found = Get-ChildItem -Path $root -Recurse -Filter nasm.exe -File -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+        if ($found) {
+            return $found.FullName
+        }
+    }
+
+    return $null
+}
+
+function Ensure-NasmOnPath {
+    $nasmExe = Find-NasmExe
+    if ($nasmExe) {
+        $nasmDir = Split-Path $nasmExe -Parent
+        $pathParts = $env:PATH -split ';'
+        if ($pathParts -notcontains $nasmDir) {
+            $env:PATH = "$nasmDir;$env:PATH"
+        }
+        Log "NASM found: $nasmExe"
+        return $true
+    }
+    return $false
+}
+
+Ensure-NasmOnPath | Out-Null
+
+# =============================================================================
 # DRY-RUN MODE
 # =============================================================================
 if ($DryRun) {
@@ -201,7 +262,11 @@ if ($DryRun) {
     Log ""
     Log "Packages that would be checked/installed:"
     foreach ($Pkg in $AllPkgs) {
-        $Status = if (Get-Command $Pkg.Binary -ErrorAction SilentlyContinue) { "already installed" } else { "MISSING" }
+        if ($Pkg.Binary -eq "nasm") {
+            $Status = if (Ensure-NasmOnPath) { "already installed" } else { "MISSING" }
+        } else {
+            $Status = if (Get-Command $Pkg.Binary -ErrorAction SilentlyContinue) { "already installed" } else { "MISSING" }
+        }
         Log "  $($Pkg.Description.PadRight(30)) winget id: $($Pkg.Id)  [$Status]"
     }
     Log ""
@@ -218,16 +283,21 @@ Log ""
 $PkgsToInstall = @()
 foreach ($Pkg in $AllPkgs) {
     $Found = $false
-    if ($Pkg.Binary) {
+
+    if ($Pkg.Binary -eq "nasm") {
+        $Found = Ensure-NasmOnPath
+    }
+    elseif ($Pkg.Binary) {
         $Found = [bool](Get-Command $Pkg.Binary -ErrorAction SilentlyContinue)
     }
+
     if (-not $Found) {
         $PkgsToInstall += $Pkg
     }
 }
 
 # Deduplicate by Id in case NSIS appears twice
-$PkgsToInstall = $PkgsToInstall | Sort-Object Id -Unique
+$PkgsToInstall = @($PkgsToInstall | Sort-Object Id -Unique)
 
 if ($PkgsToInstall.Count -eq 0) {
     Log "All required tools are already installed."
@@ -314,6 +384,9 @@ if ($PkgsToInstall.Count -eq 0) {
             }
         }
     }
+
+    # Re-add NASM if it still isn't on the refreshed PATH
+    Ensure-NasmOnPath | Out-Null
 
     Log ""
 
@@ -403,13 +476,19 @@ Log ""
 # =============================================================================
 Log "Verifying key tools on PATH..."
 
-$VerifyTools = @("cmake", "git", "ninja", "nasm", "python")
+$VerifyTools = @("cmake", "git", "ninja", "python")
 $MissingAfter = @()
 foreach ($Tool in $VerifyTools) {
     if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
         $MissingAfter += $Tool
     }
 }
+
+if (-not (Ensure-NasmOnPath)) {
+    $MissingAfter += "nasm"
+}
+
+$MissingAfter = @($MissingAfter)
 
 if ($MissingAfter.Count -gt 0) {
     Warn "The following tools are still not on PATH after installation:"

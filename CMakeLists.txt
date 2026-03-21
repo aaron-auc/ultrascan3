@@ -162,6 +162,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/admin/cmake")
 option(US3_NO_DB "Build without database support (for supercomputer backends)" OFF)
 option(US3_BUILD_PROGRAMS "Build application programs" ON)
 option(USE_QT6 "Use Qt6 instead of Qt5" OFF)
+option(BUILD_DOCUMENTATION "Build Sphinx documentation" ON)
 
 # High-level profile to make builds scriptable:
 #   APP  = desktop/user build (GUI + programs + DB)
@@ -180,20 +181,22 @@ if(US3_PROFILE STREQUAL "APP")
     set(US3_BUILD_PROGRAMS ON CACHE BOOL "" FORCE)
     set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
     set(US3_PREFER_STATIC OFF CACHE BOOL "" FORCE)
+    set(BUILD_DOCUMENTATION ON CACHE BOOL "" FORCE)
 
 elseif(US3_PROFILE STREQUAL "TEST")
     set(US3_NO_DB OFF CACHE BOOL "" FORCE)
     set(US3_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
     set(BUILD_TESTING ON CACHE BOOL "" FORCE)
     set(US3_PREFER_STATIC ON CACHE BOOL "" FORCE)
+    set(BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
 
 elseif(US3_PROFILE STREQUAL "HPC")
     set(US3_NO_DB ON CACHE BOOL "" FORCE)
     set(US3_BUILD_PROGRAMS ON CACHE BOOL "" FORCE)  # us_mpi_analysis is built
     set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
     set(US3_PREFER_STATIC ON CACHE BOOL "" FORCE)
+    set(BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
 endif()
-
 
 # Configuration-based definitions
 if(US3_NO_DB)
@@ -807,7 +810,8 @@ endif()
 # SUBDIRECTORIES
 # =============================================================================
 add_subdirectory(utils)
-if(NOT US3_PROFILE STREQUAL "HPC")
+
+if(BUILD_DOCUMENTATION AND NOT US3_PROFILE STREQUAL "HPC")
     add_subdirectory(doc/manual)
 endif()
 
@@ -856,6 +860,54 @@ endif()
 # add_subdirectory(us_somo)
 
 # =============================================================================
+# qhelpgenerator — needed for Qt help file generation (all platforms)
+# =============================================================================
+set(_QHELPGEN_HINTS "")
+foreach (_vcpkg_dir IN ITEMS "${VCPKG_INSTALLED_DIR}" "${_VCPKG_INSTALLED_DIR}")
+    if (_vcpkg_dir AND VCPKG_TARGET_TRIPLET)
+        string(REGEX REPLACE "-dynamic$" "" _vcpkg_host_triplet "${VCPKG_TARGET_TRIPLET}")
+        foreach (_triplet IN ITEMS "${VCPKG_TARGET_TRIPLET}" "${_vcpkg_host_triplet}")
+            list(APPEND _QHELPGEN_HINTS
+                    "${_vcpkg_dir}/${_triplet}/tools/qttools/bin"
+                    "${_vcpkg_dir}/${_triplet}/tools/Qt6/bin"
+                    "${_vcpkg_dir}/${_triplet}/tools/qt5-tools/bin"
+            )
+        endforeach ()
+    endif ()
+endforeach ()
+foreach (_qt_dir IN ITEMS "${Qt6_DIR}" "${Qt5_DIR}")
+    if (_qt_dir)
+        list(APPEND _QHELPGEN_HINTS "${_qt_dir}/../../../bin")
+    endif ()
+endforeach ()
+if (APPLE)
+    list(APPEND _QHELPGEN_HINTS
+            /opt/homebrew/opt/qt/bin
+            /opt/homebrew/opt/qt@5/bin
+            /usr/local/opt/qt/bin
+            /usr/local/opt/qt@5/bin
+    )
+elseif (UNIX)
+    list(APPEND _QHELPGEN_HINTS
+            /usr/lib/qt6/bin
+            /usr/lib/qt5/bin
+            /usr/lib/x86_64-linux-gnu/qt5/bin
+            /usr/lib/aarch64-linux-gnu/qt5/bin
+    )
+elseif (WIN32)
+    list(APPEND _QHELPGEN_HINTS "$ENV{QTDIR}/bin")
+endif ()
+find_program(QHELPGENERATOR_EXECUTABLE NAMES qhelpgenerator
+        HINTS ${_QHELPGEN_HINTS}
+        DOC "Qt Help Generator executable"
+)
+if (QHELPGENERATOR_EXECUTABLE)
+    message(STATUS "Found qhelpgenerator: ${QHELPGENERATOR_EXECUTABLE}")
+else ()
+    message(STATUS "qhelpgenerator not found - Qt help files will not be built")
+endif ()
+
+# =============================================================================
 # macOS DEPLOYMENT (folder-based layout)
 # =============================================================================
 if(APPLE AND US3_BUILD_PROGRAMS AND NOT US3_PROFILE STREQUAL "HPC")
@@ -876,8 +928,8 @@ if(APPLE AND US3_BUILD_PROGRAMS AND NOT US3_PROFILE STREQUAL "HPC")
         string(REPLACE "-dynamic" "" _STATIC_TRIPLET "${VCPKG_TARGET_TRIPLET}")
         set(_VCPKG_TOOLS_STA "${VCPKG_INSTALLED_DIR}/${_STATIC_TRIPLET}/tools/Qt6/bin")
         # Also check qt5 tools subdir for Qt5 builds
-        set(_VCPKG_TOOLS_DYN5 "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/qttools/bin")
-        set(_VCPKG_TOOLS_STA5 "${VCPKG_INSTALLED_DIR}/${_STATIC_TRIPLET}/tools/qttools/bin")
+        set(_VCPKG_TOOLS_DYN5 "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/qt5-tools/bin")
+        set(_VCPKG_TOOLS_STA5 "${VCPKG_INSTALLED_DIR}/${_STATIC_TRIPLET}/tools/qt5-tools/bin")
     else()
         set(_VCPKG_TOOLS_DYN "")
         set(_VCPKG_TOOLS_STA "")
@@ -1165,7 +1217,7 @@ if(WIN32 AND US3_BUILD_PROGRAMS)
     # -------------------------------------------------------------------------
     if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
         set(_WIN_VCPKG_TOOLS_DYN  "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/Qt6/bin")
-        set(_WIN_VCPKG_TOOLS_STA5 "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/qttools/bin")
+        set(_WIN_VCPKG_TOOLS_STA5 "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/qt5-tools/bin")
         string(REPLACE "-dynamic" "" _WIN_STATIC_TRIPLET "${VCPKG_TARGET_TRIPLET}")
         set(_WIN_VCPKG_TOOLS_STA  "${VCPKG_INSTALLED_DIR}/${_WIN_STATIC_TRIPLET}/tools/Qt6/bin")
     else()
@@ -1204,17 +1256,15 @@ if(WIN32 AND US3_BUILD_PROGRAMS)
             "${Qt5_DIR}/../../../bin/assistant.exe"
             "$ENV{QTDIR}/bin/assistant.exe"
         )
-        set(ASSISTANT_EXE_PATH "" CACHE FILEPATH "Path to assistant.exe for Windows packaging")
-        if(NOT ASSISTANT_EXE_PATH)
-            foreach(_cand IN LISTS _win_assistant_candidates)
-                if(EXISTS "${_cand}")
-                    set(ASSISTANT_EXE_PATH "${_cand}")
-                    break()
-                endif()
-            endforeach()
+        if(NOT ASSISTANT_EXECUTABLE)
+            find_program(ASSISTANT_EXECUTABLE
+                    NAMES assistant.exe Assistant.exe
+                    HINTS ${_win_assistant_candidates}
+                    DOC "Path to assistant.exe for Windows packaging"
+            )
         endif()
-        if(ASSISTANT_EXE_PATH)
-            message(STATUS "assistant.exe for packaging: ${ASSISTANT_EXE_PATH}")
+        if(ASSISTANT_EXECUTABLE)
+            message(STATUS "assistant.exe for packaging: ${ASSISTANT_EXECUTABLE}")
         else()
             message(STATUS "assistant.exe not found - help will not work in packaged installer")
         endif()
@@ -1260,7 +1310,7 @@ if(WIN32 AND US3_BUILD_PROGRAMS)
             COMMAND ${CMAKE_COMMAND}
                 -DSTAGE_DIR=${US3_WIN_STAGE_DIR}
                 -DWINDEPLOYQT=${WINDEPLOYQT_EXECUTABLE}
-                -DASSISTANT_EXE=${ASSISTANT_EXE_PATH}
+                -DASSISTANT_EXE=${ASSISTANT_EXECUTABLE}
                 -DQCH_DIR=${CMAKE_BINARY_DIR}/bin
                 -DBIN_DIR=${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
                 -DLIB_DIR=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
