@@ -9,30 +9,34 @@
 # This avoids the "nothing gets cached if the job runs out of disk" problem
 # that occurs when building Qt + all UltraScan3 deps in a single job.
 #
-# Each stage calls "vcpkg install" for a targeted subset of ports.  vcpkg is
-# additive: ports already present in the binary cache are restored instantly
-# without rebuilding, so later stages automatically benefit from earlier ones.
+# vcpkg manifest mode does not accept individual port names on the command
+# line, so stages are implemented using dedicated warm-only features in
+# vcpkg.json (prefixed "warm-") that select port subsets via --x-feature.
+# These features have no effect on real builds.
 #
-# STAGES (qt6-app, the primary target)
-# -------------------------------------
-#   1  base      openssl, zlib, libarchive, eigen3
-#   2  qtbase    qtbase  (largest port -- ~20-30 min, main disk pressure)
-#   3  qtmods    qtsvg, qttools, qtdatavis3d, qtmultimedia, libmariadb, sqlite3
-#   4  qwt       qwt-6-3-0-qt6, qwtplot3d-qwt-6-3-0-qt6
+# STAGES (qt6)
+# ------------
+#   1  base        No feature. Installs top-level deps: openssl, zlib,
+#                  libarchive, eigen3.  Fast (~5 min).
+#   2  qtbase      --x-feature=warm-qt6-stage2  qtbase alone (~25-40 min)
+#   3  qtmods      --x-feature=warm-qt6-stage3  Qt modules + DB libs (~15 min)
+#   4  qwt         --x-feature=warm-qt6-stage4  Qwt + QwtPlot3D (~10 min)
 #
-# STAGES (qt5-qwt616-app)
-# ------------------------
-#   1  base      openssl, zlib, libarchive, eigen3
-#   2  qtbase    qt5-base
-#   3  qtmods    qt5-svg, qt5-tools, qt5-datavis3d, qt5-multimedia, libmariadb, sqlite3
-#   4  qwt       qwt-6-1-6, qwtplot3d-qwt-6-1-6-qt5
+# STAGES (qt5-qwt616)
+# -------------------
+#   1  base        No feature. Same top-level deps as qt6.  Fast (~5 min).
+#   2  qt5mods     --x-feature=warm-qt5-stage2  qt5-base + modules + DB (~20 min)
+#   3  qwt         --x-feature=warm-qt5-stage3  Qwt + QwtPlot3D (~10 min)
+#
+# vcpkg restores any port already in the binary cache instantly, so each
+# stage only builds what is genuinely new.
 #
 # USAGE
 # -----
-#   ./scripts/warm-cache.sh --stage <1|2|3|4> [OPTIONS]
+#   ./scripts/warm-cache.sh --stage <N> [OPTIONS]
 #
 # OPTIONS
-#   --stage N          Required. Which stage to install (1-4).
+#   --stage N          Required. Stage number (1-4 for qt6; 1-3 for qt5-qwt616).
 #   --qt6              Qt6 + Qwt 6.3.0 [default]
 #   --qt5-qwt616       Qt5 + Qwt 6.1.6
 #   --arch x64|arm64   Architecture [default: auto-detect]
@@ -60,10 +64,6 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --stage)
       STAGE="$2"; shift 2
-      if [[ "$STAGE" != "1" && "$STAGE" != "2" && "$STAGE" != "3" && "$STAGE" != "4" ]]; then
-        echo "ERROR: --stage must be 1, 2, 3, or 4" >&2
-        exit 1
-      fi
       ;;
     --qt6)         QT_VARIANT="qt6";        shift ;;
     --qt5-qwt616)  QT_VARIANT="qt5-qwt616"; shift ;;
@@ -78,31 +78,61 @@ while [[ $# -gt 0 ]]; do
       US3_VCPKG_ROOT="$2"; shift 2
       ;;
     --help)
-      sed -n '/^# PURPOSE/,/^# ===*/p' "$0" | head -n -1
+      grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
       echo "ERROR: Unknown option: $1" >&2
-      echo "Run '$0 --help' for usage." >&2
       exit 1
       ;;
   esac
 done
 
 if [ -z "$STAGE" ]; then
-  echo "ERROR: --stage <1|2|3|4> is required." >&2
+  echo "ERROR: --stage <N> is required." >&2
   exit 1
 fi
+
+# =============================================================================
+# MAP STAGE NUMBER TO FEATURE
+# Validated after QT_VARIANT is known.
+# =============================================================================
+FEATURE=""
+MAX_STAGE=0
+
+case "$QT_VARIANT" in
+  qt6)
+    MAX_STAGE=4
+    case "$STAGE" in
+      1) FEATURE="" ;;          # base deps only, no feature flag
+      2) FEATURE="warm-qt6-stage2" ;;
+      3) FEATURE="warm-qt6-stage3" ;;
+      4) FEATURE="warm-qt6-stage4" ;;
+      *) echo "ERROR: qt6 supports stages 1-4, got: $STAGE" >&2; exit 1 ;;
+    esac
+    ;;
+  qt5-qwt616)
+    MAX_STAGE=3
+    case "$STAGE" in
+      1) FEATURE="" ;;
+      2) FEATURE="warm-qt5-stage2" ;;
+      3) FEATURE="warm-qt5-stage3" ;;
+      *) echo "ERROR: qt5-qwt616 supports stages 1-3, got: $STAGE" >&2; exit 1 ;;
+    esac
+    ;;
+  *)
+    echo "ERROR: Unknown qt_variant: $QT_VARIANT" >&2
+    exit 1
+    ;;
+esac
 
 # =============================================================================
 # PLATFORM / ARCH DETECTION
 # =============================================================================
 if [[ "$OSTYPE" == "darwin"* ]]; then
   PLATFORM="macOS"
-  PLATFORM_PREFIX="macos"
 elif [[ "$OSTYPE" == "linux-gnu"* || "$(uname -s)" == "Linux" ]]; then
   PLATFORM="Linux"
-  PLATFORM_PREFIX="linux"
 else
   echo "ERROR: Unsupported platform: OSTYPE=${OSTYPE:-unset}" >&2
   exit 1
@@ -118,8 +148,7 @@ if [ -z "$ARCH" ]; then
 fi
 
 # =============================================================================
-# TRIPLET DERIVATION
-# Must match toolchain.cmake / build.sh _derive_triplet().
+# TRIPLET DERIVATION — must match toolchain.cmake / build.sh
 # =============================================================================
 if [ "$PLATFORM" = "Linux" ]; then
   [ "$ARCH" = "arm64" ] && TRIPLET="arm64-linux" || TRIPLET="x64-linux-dynamic"
@@ -134,7 +163,8 @@ echo "=========================================="
 echo "  Platform    : $PLATFORM ($ARCH)"
 echo "  Qt variant  : $QT_VARIANT"
 echo "  Triplet     : $TRIPLET"
-echo "  Stage       : $STAGE / 4"
+echo "  Stage       : $STAGE / $MAX_STAGE"
+echo "  Feature     : ${FEATURE:-<none> (base deps only)}"
 echo ""
 
 # =============================================================================
@@ -147,7 +177,6 @@ if [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ]; then
   echo "Linux disk preflight"
   echo "=========================================="
   df -h
-
   echo "Freeing large preinstalled tool stacks..."
   sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
   echo "Disk after cleanup:"
@@ -192,8 +221,6 @@ if [ -z "$US3_VCPKG_ROOT" ]; then
   fi
 fi
 
-echo "Using vcpkg: $US3_VCPKG_ROOT"
-
 if [ ! -d "$US3_VCPKG_ROOT/.git" ]; then
   echo "Cloning vcpkg..."
   git clone https://github.com/microsoft/vcpkg.git "$US3_VCPKG_ROOT"
@@ -209,7 +236,7 @@ export VCPKG_INSTALLED_DIR="$US3_VCPKG_ROOT/installed"
 
 # Binary cache
 if [ -n "${US3_VCPKG_CACHE:-}" ]; then
-  : # already set
+  : # set via env
 elif [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ] && [ -n "${US3_SCRATCH_ROOT:-}" ]; then
   US3_VCPKG_CACHE="$US3_SCRATCH_ROOT/vcpkg-cache"
 else
@@ -220,7 +247,7 @@ export VCPKG_BINARY_SOURCES="clear;files,$US3_VCPKG_CACHE,readwrite"
 
 # Downloads cache
 if [ -n "${US3_VCPKG_DOWNLOADS:-}" ]; then
-  : # already set
+  : # set via env
 elif [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ] && [ -n "${US3_SCRATCH_ROOT:-}" ]; then
   US3_VCPKG_DOWNLOADS="$US3_SCRATCH_ROOT/vcpkg-downloads"
 else
@@ -229,27 +256,27 @@ fi
 mkdir -p "$US3_VCPKG_DOWNLOADS"
 export VCPKG_DOWNLOADS="$US3_VCPKG_DOWNLOADS"
 
-# Clean up buildtrees after each port to reduce peak disk usage
 export VCPKG_INSTALL_OPTIONS="--clean-after-build"
 
 CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 export VCPKG_MAX_CONCURRENCY="$CORES"
 
-# Overlay triplets and ports
 OVERLAY_TRIPLETS="${SOURCE_DIR}/admin/cmake/triplets"
 OVERLAY_PORTS="${SOURCE_DIR}/admin/cmake/ports"
 
-VCPKG_COMMON_ARGS=(
+VCPKG_ARGS=(
   "--triplet=${TRIPLET}"
-  "--overlay-triplets=${OVERLAY_TRIPLETS}"
   "--host-triplet=${STATIC_TRIPLET}"
+  "--overlay-triplets=${OVERLAY_TRIPLETS}"
+  "--x-no-default-features"
 )
-
 if [ -d "$OVERLAY_PORTS" ]; then
-  VCPKG_COMMON_ARGS+=("--overlay-ports=${OVERLAY_PORTS}")
+  VCPKG_ARGS+=("--overlay-ports=${OVERLAY_PORTS}")
+fi
+if [ -n "$FEATURE" ]; then
+  VCPKG_ARGS+=("--x-feature=${FEATURE}")
 fi
 
-echo ""
 echo "  vcpkg root     : $US3_VCPKG_ROOT"
 echo "  vcpkg cache    : $US3_VCPKG_CACHE"
 echo "  vcpkg downloads: $US3_VCPKG_DOWNLOADS"
@@ -258,55 +285,15 @@ echo "  concurrency    : $CORES"
 echo ""
 
 # =============================================================================
-# STAGE PORT LISTS
+# INSTALL
 # =============================================================================
-# Stage 1: Small base libs — fast, always finishes, establishes cache entry.
-STAGE1_PORTS=("openssl" "zlib" "libarchive" "eigen3")
-
-# Stage 2: qtbase alone — the single most disk/time-intensive port.
-# Split from modules so if it finishes, its cache entry is saved before
-# attempting anything else.
-if [ "$QT_VARIANT" = "qt6" ]; then
-  STAGE2_PORTS=("qtbase")
-else
-  STAGE2_PORTS=("qt5-base")
-fi
-
-# Stage 3: Remaining Qt modules + DB libs.
-if [ "$QT_VARIANT" = "qt6" ]; then
-  STAGE3_PORTS=("qtsvg" "qttools" "qtdatavis3d" "qtmultimedia" "libmariadb" "sqlite3")
-else
-  STAGE3_PORTS=("qt5-svg" "qt5-tools" "qt5-datavis3d" "qt5-multimedia" "libmariadb" "sqlite3")
-fi
-
-# Stage 4: Qwt + QwtPlot3D — depend on Qt modules from stage 3.
-if [ "$QT_VARIANT" = "qt6" ]; then
-  STAGE4_PORTS=("qwt-6-3-0-qt6" "qwtplot3d-qwt-6-3-0-qt6")
-else
-  STAGE4_PORTS=("qwt-6-1-6" "qwtplot3d-qwt-6-1-6-qt5")
-fi
-
-# =============================================================================
-# SELECT AND INSTALL THIS STAGE
-# =============================================================================
-case "$STAGE" in
-  1) PORTS=("${STAGE1_PORTS[@]}") ;;
-  2) PORTS=("${STAGE2_PORTS[@]}") ;;
-  3) PORTS=("${STAGE3_PORTS[@]}") ;;
-  4) PORTS=("${STAGE4_PORTS[@]}") ;;
-esac
-
 echo "=========================================="
-echo "Stage ${STAGE}: installing ${#PORTS[@]} port(s)"
-echo "  ${PORTS[*]}"
+echo "Stage ${STAGE}/${MAX_STAGE}: vcpkg install"
 echo "=========================================="
+df -h
 echo ""
 
-df -h
-
-"$US3_VCPKG_ROOT/vcpkg" install \
-  "${VCPKG_COMMON_ARGS[@]}" \
-  "${PORTS[@]}"
+"$US3_VCPKG_ROOT/vcpkg" install "${VCPKG_ARGS[@]}"
 
 echo ""
 echo "Stage ${STAGE} complete."
