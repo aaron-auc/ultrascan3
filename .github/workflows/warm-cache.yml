@@ -28,8 +28,8 @@ on:
         type: choice
         options:
           - all
-          - ubuntu
-          - macos
+          - "ubuntu-x64 (ubuntu-24.04)"
+          - "macos-arm (macos-15)"
 
       qt_variant:
         description: "Qt variant"
@@ -38,7 +38,7 @@ on:
         default: qt6
         options:
           - qt6
-          - qt5-qwt616
+          - qt5-qwt630
 
 permissions:
   contents: read
@@ -51,4 +51,3 @@ jobs:
       platforms:  ${{ inputs.platforms }}
       qt_variant: ${{ inputs.qt_variant }}
     secrets: inherit
-
