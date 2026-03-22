@@ -1,0 +1,42 @@
+name: Warm vcpkg Cache
+
+# Dispatches the staged vcpkg cache-warming workflow in uslims_version_workflows.
+# Run this manually before a nightly build, or after vcpkg.json / overlay port
+# changes, on any platform that has been hitting disk-space failures.
+#
+# The warm workflow installs vcpkg dependencies in four sequential stages,
+# saving the binary cache after each stage so partial progress is never lost.
+# Once all stages complete, the full build workflow gets a cache hit and skips
+# vcpkg entirely, leaving enough disk headroom for the UltraScan3 compile.
+
+run-name: "Warm Cache [${{ inputs.ref }}] ${{ inputs.qt_variant }} by @${{ github.actor }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+
+      ref:
+        description: "Branch, tag, or SHA to warm the cache for"
+        required: false
+        type: string
+        default: main
+
+      qt_variant:
+        description: "Qt variant"
+        required: false
+        type: choice
+        default: qt6
+        options:
+          - qt6
+          - qt5-qwt616
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
+    with:
+      ref:        ${{ inputs.ref }}
+      qt_variant: ${{ inputs.qt_variant }}
+    secrets: inherit
