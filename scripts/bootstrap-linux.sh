@@ -28,6 +28,9 @@
 #   Ubuntu 22.04 LTS (Jammy)
 #   Ubuntu 24.04 LTS (Noble)  <-- primary GitHub Actions runner target
 #   Debian 12 (Bookworm)
+#   Rocky Linux 8
+#   AlmaLinux 8
+#   RHEL 8
 #
 # macOS is intentionally out of scope: Homebrew and Xcode are developer
 # choices that build.sh already handles (Xcode version switching, MPI hint).
@@ -370,9 +373,16 @@ if [ "$DRY_RUN" = true ]; then
     echo "  $pkg"
   done
   log ""
-  log "Command that would run:"
-  log "  ${SUDO:+$SUDO }apt-get update -qq"
-  log "  ${SUDO:+$SUDO }apt-get install -y ${ALL_PKGS[*]}"
+  if [ "$DISTRO_FAMILY" = "debian" ]; then
+    log "Commands that would run:"
+    log "  ${SUDO:+$SUDO }apt-get update -qq"
+    log "  ${SUDO:+$SUDO }apt-get install -y ${ALL_PKGS[*]}"
+  elif [ "$DISTRO_FAMILY" = "rhel" ]; then
+    log "Commands that would run:"
+    log "  ${SUDO:+$SUDO }dnf install -y epel-release"
+    log "  ${SUDO:+$SUDO }dnf config-manager --set-enabled crb  # or powertools on older Rocky 8"
+    log "  ${SUDO:+$SUDO }dnf install -y ${ALL_PKGS[*]}"
+  fi
   exit 0
 fi
 
