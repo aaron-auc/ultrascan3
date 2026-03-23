@@ -38,7 +38,7 @@
     Build profile: APP (default), TEST, HPC
 
 .PARAMETER vcpkg-root
-    Path to vcpkg installation. Priority: --vcpkg-root > US3_VCPKG_ROOT env > source-tree vcpkg > ~/vcpkg
+    Path to vcpkg installation. Priority: --vcpkg-root > US3_VCPKG_ROOT env > source-tree vcpkg > $HOME\vcpkg
 
 .PARAMETER pkg
     Build the Windows NSIS installer after compiling
@@ -97,9 +97,14 @@
         US3_BUILD_JOBS      Override number of parallel build jobs
         US3_VCPKG_ROOT      Override vcpkg location (see priority above)
         US3_VCPKG_CACHE     Override binary cache path (default: $HOME\.vcpkg-cache)
+        US3_VCPKG_DOWNLOADS Override downloads cache path (default: $HOME\vcpkg-downloads)
 #>
 
 param(
+    [Parameter(Position = 0)]
+    [ValidateSet("APP", "TEST", "HPC")]
+    [string]$profile = "APP",
+
     [switch]${rebuild},
     [switch]${clean},
     [switch]${purge-cache},
@@ -108,13 +113,14 @@ param(
     [switch]${qt5-qwt616},
     [switch]${qt5-qwt630},
     [string]${arch}       = "",
-    [string]${profile}    = "APP",
     [string]${vcpkg-root} = "",
+    [switch]${repair-vcpkg},
     [switch]${help}
 )
 
 $DocsBuilt = $true
 $DocsStatusMessage = ""
+$profile = $profile.ToUpperInvariant()
 
 # =============================================================================
 # HELP
@@ -140,6 +146,7 @@ if (${help}) {
     Write-Host "  --arch x64               Target x64 architecture [default: auto-detect]"
     Write-Host "  --arch arm64             Target ARM64 architecture"
     Write-Host "  --vcpkg-root <path>      Path to vcpkg installation"
+    Write-Host "  --repair-vcpkg           Reset and clean an existing vcpkg git repo before use"
     Write-Host "  --help                   Show this help message"
     Write-Host ""
     Write-Host "PROFILE:"
@@ -164,12 +171,16 @@ if (${help}) {
     Write-Host "  build.bat --clean --arch arm64 TEST        # Clean ARM64 Qt6 TEST build"
     Write-Host "  build.bat --vcpkg-root C:\dev\vcpkg        # Use specific vcpkg"
     Write-Host "  build.bat --vcpkg-root .\vcpkg             # Use source-tree vcpkg"
+    Write-Host "  build.bat --repair-vcpkg               # Reset/clean existing vcpkg repo"
     Write-Host "  build.bat --pkg                            # Build + produce NSIS installer"
     Write-Host ""
     Write-Host "ENVIRONMENT VARIABLES:"
     Write-Host "  US3_BUILD_JOBS           Override number of parallel build jobs"
     Write-Host "  US3_VCPKG_ROOT           Override vcpkg location (see priority above)"
     Write-Host "  US3_VCPKG_CACHE          Override binary cache path (default: `$HOME\.vcpkg-cache)"
+    Write-Host ""
+    Write-Host "  NOTE: Qt5 on Windows ARM64 is not supported."
+    Write-Host "        Use Qt5 on x64 or Qt6 on ARM64 instead."
     exit 0
 }
 
@@ -205,19 +216,222 @@ if (-not $Arch) {
 # =============================================================================
 # BUILD PRESET
 # =============================================================================
+function Test-UnsupportedBuildMatrix {
+    param(
+        [string]$Arch,
+        [string]$QtSuffix
+    )
+
+    $IsQt5 = ($QtSuffix -like "-qt5*")
+    $IsArm64 = ($Arch -eq "arm64")
+
+    if ($IsQt5 -and $IsArm64) {
+        Write-Host "ERROR: Qt5 on Windows ARM64 is not supported in this build configuration." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Recommended alternatives:" -ForegroundColor Yellow
+        Write-Host "  --qt5-qwt630 --arch x64"
+        Write-Host "  --qt6 --arch arm64"
+        Write-Host ""
+        exit 1
+    }
+}
+
 if ($Arch -eq "arm64") {
     $Preset = "windows-release$QtSuffix-arm64"
 } else {
     $Preset = "windows-release$QtSuffix"
 }
 
+Test-UnsupportedBuildMatrix `
+    -Arch $Arch `
+    -QtSuffix $QtSuffix
+
 # =============================================================================
 # RESOLVE SOURCE ROOT
-# Defined early so bootstrap-windows.ps1 can be located relative to this script.
 # =============================================================================
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SourceRoot = (Resolve-Path (Join-Path $ScriptDir "..")).Path
 Set-Location $SourceRoot
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+function Get-BuiltinBaseline {
+    param([string]$RepoRoot)
+
+    $vcpkgJson = Join-Path $RepoRoot "vcpkg.json"
+    $vcpkgConfig = Join-Path $RepoRoot "vcpkg-configuration.json"
+
+    foreach ($file in @($vcpkgJson, $vcpkgConfig)) {
+        if (Test-Path $file) {
+            try {
+                $json = Get-Content $file -Raw | ConvertFrom-Json
+                if ($json.'builtin-baseline') {
+                    return [string]$json.'builtin-baseline'
+                }
+            } catch {
+                Write-Host "WARNING: Could not parse $file" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    return $null
+}
+
+function Test-VcpkgBaselineAvailable {
+    param(
+        [string]$VcpkgRoot,
+        [string]$Baseline
+    )
+
+    if (-not $Baseline) { return $true }
+    if (-not (Test-Path $VcpkgRoot)) { return $false }
+
+    Push-Location $VcpkgRoot
+    try {
+        git cat-file -e "${Baseline}^{commit}" 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+
+        git show "${Baseline}:versions/baseline.json" 1>$null 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+
+        return $true
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Ensure-VcpkgBaselineAvailable {
+    param(
+        [string]$RepoRoot,
+        [string]$VcpkgRoot
+    )
+
+    $baseline = Get-BuiltinBaseline -RepoRoot $RepoRoot
+    if (-not $baseline) {
+        Write-Host "No builtin-baseline found; skipping baseline validation."
+        return
+    }
+
+    Write-Host "Project builtin-baseline: $baseline"
+
+    if (Test-VcpkgBaselineAvailable -VcpkgRoot $VcpkgRoot -Baseline $baseline) {
+        Write-Host "vcpkg baseline is available locally."
+        return
+    }
+
+    Write-Host "Baseline not available locally. Fetching vcpkg history..." -ForegroundColor Yellow
+
+    Push-Location $VcpkgRoot
+    try {
+        git fetch --all --tags --prune
+        if ($LASTEXITCODE -ne 0) {
+            throw "git fetch failed in $VcpkgRoot"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    if (Test-VcpkgBaselineAvailable -VcpkgRoot $VcpkgRoot -Baseline $baseline) {
+        Write-Host "vcpkg baseline became available after fetch."
+        return
+    }
+
+    Write-Host ""
+    Write-Host "ERROR: The requested builtin-baseline is not available in the local vcpkg repo." -ForegroundColor Red
+    Write-Host "  Baseline : $baseline"
+    Write-Host "  vcpkg    : $VcpkgRoot"
+    Write-Host ""
+    Write-Host "This usually means the local vcpkg clone is stale, shallow, or from the wrong history." -ForegroundColor Yellow
+    Write-Host "Recommended fix:" -ForegroundColor Yellow
+    Write-Host "  1. Delete or rename $VcpkgRoot"
+    Write-Host "  2. Re-clone microsoft/vcpkg"
+    Write-Host "  3. Re-run the build"
+    exit 1
+}
+
+function Sync-VcpkgRepoToBaseline {
+    param(
+        [string]$RepoRoot,
+        [string]$VcpkgRoot
+    )
+
+    $baseline = Get-BuiltinBaseline -RepoRoot $RepoRoot
+    if (-not $baseline) { return }
+
+    Push-Location $VcpkgRoot
+    try {
+        git checkout --detach $baseline
+        if ($LASTEXITCODE -ne 0) {
+            throw "git checkout --detach $baseline failed"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "vcpkg repo synced to baseline $baseline"
+}
+
+function Test-PathLengthRisk {
+    param(
+        [string]$RepoRoot,
+        [string]$VcpkgRoot,
+        [string]$BuildDir,
+        [string]$QtVariant,
+        [string]$Platform
+    )
+
+    if ($Platform -ne "Windows") { return }
+
+    $repoLen  = $RepoRoot.Length
+    $vcpkgLen = $VcpkgRoot.Length
+    $buildLen = $BuildDir.Length
+
+    Write-Host "=========================================="
+    Write-Host "Windows path-length preflight"
+    Write-Host "=========================================="
+    Write-Host "Repo root : $RepoRoot"
+    Write-Host "Length    : $repoLen"
+    Write-Host "vcpkg root: $VcpkgRoot"
+    Write-Host "Length    : $vcpkgLen"
+    Write-Host "Build dir : $BuildDir"
+    Write-Host "Length    : $buildLen"
+    Write-Host ""
+
+    $qt5Build = ($QtVariant -match "qt5")
+
+    if ($qt5Build) {
+        if ($repoLen -gt 30 -or $vcpkgLen -gt 15 -or $buildLen -gt 70) {
+            throw @"
+Windows Qt5 build aborted due to high path-length risk.
+
+Qt5 tools are known to fail under long paths.
+Move the repository and vcpkg to short roots such as:
+
+  C:\src\us3
+  C:\src\vcpkg
+
+or use subst, for example:
+
+  subst X: $RepoRoot
+  subst V: $VcpkgRoot
+
+Then re-run the build from the shortened path.
+"@
+        }
+    }
+    else {
+        if ($repoLen -gt 80 -or $vcpkgLen -gt 60 -or $buildLen -gt 140) {
+            Write-Warning "Windows build path is long and may cause toolchain or packaging failures."
+            Write-Warning "Recommended short roots:"
+            Write-Warning "  C:\src\us3"
+            Write-Warning "  C:\src\vcpkg"
+        }
+    }
+}
 
 # =============================================================================
 # BUILD DIRECTORY
@@ -427,33 +641,182 @@ if (${vcpkg-root}) {
 
 Write-Host ""
 
-if ((Test-Path $VcpkgRoot) -and (-not (Test-Path (Join-Path $VcpkgRoot ".git")))) {
-    Write-Host "ERROR: $VcpkgRoot exists but is not a vcpkg git clone." -ForegroundColor Red
-    Write-Host "Use --vcpkg-root or US3_VCPKG_ROOT to point to a valid vcpkg path."
-    exit 1
+function Test-VcpkgRoot {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) { return $false }
+
+    $Required = @(
+        "bootstrap-vcpkg.bat",
+        "scripts\buildsystems\vcpkg.cmake",
+        "ports",
+        "triplets"
+    )
+
+    foreach ($Item in $Required) {
+        if (-not (Test-Path (Join-Path $Path $Item))) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
-if (-not (Test-Path (Join-Path $VcpkgRoot ".git"))) {
+function Test-VcpkgDownloadsOnlyTree {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) { return $false }
+
+    $DownloadsPath = Join-Path $Path "downloads"
+    if (-not (Test-Path $DownloadsPath)) { return $false }
+
+    $Markers = @(
+        "bootstrap-vcpkg.bat",
+        "scripts\buildsystems\vcpkg.cmake",
+        "ports",
+        "triplets",
+        ".git"
+    )
+
+    foreach ($Marker in $Markers) {
+        if (Test-Path (Join-Path $Path $Marker)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Test-VcpkgGitRepo {
+    param([string]$Path)
+
+    return (Test-Path (Join-Path $Path ".git"))
+}
+
+function Test-VcpkgRepoClean {
+    param([string]$VcpkgRoot)
+
+    if (-not (Test-VcpkgGitRepo $VcpkgRoot)) { return $false }
+
+    Push-Location $VcpkgRoot
+    try {
+        git update-index -q --refresh 2>$null
+
+        git diff --quiet
+        if ($LASTEXITCODE -ne 0) { return $false }
+
+        git diff --cached --quiet
+        if ($LASTEXITCODE -ne 0) { return $false }
+
+        $Untracked = git ls-files --others --exclude-standard
+        if ($LASTEXITCODE -ne 0) { return $false }
+        if ($Untracked) { return $false }
+
+        return $true
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Repair-VcpkgRepo {
+    param([string]$VcpkgRoot)
+
+    if (-not (Test-VcpkgGitRepo $VcpkgRoot)) {
+        Write-Host "ERROR: $VcpkgRoot is not a git repository, cannot repair in place." -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host "Repairing vcpkg repo at $VcpkgRoot ..." -ForegroundColor Yellow
+
+    Push-Location $VcpkgRoot
+    try {
+        git fetch --all --tags --prune
+        if ($LASTEXITCODE -ne 0) {
+            throw "git fetch failed"
+        }
+
+        git reset --hard HEAD
+        if ($LASTEXITCODE -ne 0) {
+            throw "git reset --hard failed"
+        }
+
+        git clean -xfd
+        if ($LASTEXITCODE -ne 0) {
+            throw "git clean -xfd failed"
+        }
+    }
+    catch {
+        Write-Host "ERROR: Failed to repair vcpkg repo: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "vcpkg repo repair complete." -ForegroundColor Green
+}
+
+if (Test-Path $VcpkgRoot) {
+    if (Test-VcpkgRoot $VcpkgRoot) {
+        Write-Host "Found usable vcpkg root at $VcpkgRoot"
+
+        if (-not (Test-VcpkgRepoClean $VcpkgRoot)) {
+            if (${repair-vcpkg}) {
+                Write-Warning "$VcpkgRoot has local modifications or untracked files."
+                Repair-VcpkgRepo $VcpkgRoot
+            } else {
+                Write-Host "ERROR: Existing vcpkg repo is not clean." -ForegroundColor Red
+                Write-Host "  $VcpkgRoot"
+                Write-Host ""
+                Write-Host "This can cause mixed-state versioning failures." -ForegroundColor Yellow
+                Write-Host "Re-run with --repair-vcpkg to reset and clean this repo automatically," -ForegroundColor Yellow
+                Write-Host "or delete/reclone it manually." -ForegroundColor Yellow
+                exit 1
+            }
+        }
+    } elseif (Test-VcpkgDownloadsOnlyTree $VcpkgRoot) {
+        Write-Warning "$VcpkgRoot contains only a cached downloads subtree. Removing it so vcpkg can be cloned cleanly."
+        Remove-Item -Recurse -Force $VcpkgRoot
+    } else {
+        Write-Warning "$VcpkgRoot exists but is not a usable vcpkg tree. Removing it and cloning a fresh copy."
+        Remove-Item -Recurse -Force $VcpkgRoot
+    }
+}
+
+if (-not (Test-Path $VcpkgRoot)) {
     Write-Host "vcpkg not found at $VcpkgRoot, cloning..."
     git clone https://github.com/microsoft/vcpkg.git $VcpkgRoot
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Failed to clone vcpkg into $VcpkgRoot" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
 }
 
 if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
     Write-Host "Bootstrapping vcpkg at $VcpkgRoot..."
-    # -disableMetrics suppresses the telemetry consent prompt which can
-    # stall non-interactive CI environments on first bootstrap.
     Push-Location $VcpkgRoot
     & .\bootstrap-vcpkg.bat -disableMetrics
+    $BootstrapExit = $LASTEXITCODE
     Pop-Location
+    if ($BootstrapExit -ne 0) {
+        Write-Host "ERROR: vcpkg bootstrap failed." -ForegroundColor Red
+        exit $BootstrapExit
+    }
 }
 
 # Binary cache: honour US3_VCPKG_CACHE env var, default to $HOME\.vcpkg-cache
 $VcpkgCacheDir = if ($env:US3_VCPKG_CACHE) { $env:US3_VCPKG_CACHE } else { Join-Path $HOME ".vcpkg-cache" }
-if (-not (Test-Path $VcpkgCacheDir)) { New-Item -ItemType Directory -Path $VcpkgCacheDir | Out-Null }
+if (-not (Test-Path $VcpkgCacheDir)) { New-Item -ItemType Directory -Path $VcpkgCacheDir -Force | Out-Null }
+
+# Downloads cache: honour US3_VCPKG_DOWNLOADS env var, default to $HOME\vcpkg-downloads
+$VcpkgDownloadsDir = if ($env:US3_VCPKG_DOWNLOADS) { $env:US3_VCPKG_DOWNLOADS } else { Join-Path $HOME "vcpkg-downloads" }
+if (-not (Test-Path $VcpkgDownloadsDir)) { New-Item -ItemType Directory -Path $VcpkgDownloadsDir -Force | Out-Null }
 
 $env:VCPKG_ROOT           = $VcpkgRoot
 $env:VCPKG_BINARY_SOURCES = "clear;files,$VcpkgCacheDir,readwrite"
 $env:VCPKG_INSTALLED_DIR  = Join-Path $VcpkgRoot "installed"
+$env:VCPKG_DOWNLOADS      = $VcpkgDownloadsDir
 
 if (-not (Test-Path (Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"))) {
     Write-Host "ERROR: vcpkg toolchain not found." -ForegroundColor Red
@@ -461,7 +824,15 @@ if (-not (Test-Path (Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"))) 
 }
 
 Write-Host "vcpkg ready." -ForegroundColor Green
+Write-Host "  root      : $VcpkgRoot"
+Write-Host "  cache     : $VcpkgCacheDir"
+Write-Host "  downloads : $VcpkgDownloadsDir"
 Write-Host ""
+
+Ensure-VcpkgBaselineAvailable -RepoRoot $SourceRoot -VcpkgRoot $VcpkgRoot
+Sync-VcpkgRepoToBaseline -RepoRoot $SourceRoot -VcpkgRoot $VcpkgRoot
+Write-Host ""
+
 
 # =============================================================================
 # CLEAN / REBUILD (tiered)
@@ -610,6 +981,13 @@ if (-not $NonInteractive) {
     Write-Host "Grab a coffee if this is your first build!" -ForegroundColor Yellow
     Write-Host ""
 }
+
+Test-PathLengthRisk `
+    -RepoRoot $SourceRoot `
+    -VcpkgRoot $VcpkgRoot `
+    -BuildDir $BuildDir `
+    -QtVariant $QtSuffix `
+    -Platform "Windows"
 
 # =============================================================================
 # CONFIGURE AND BUILD

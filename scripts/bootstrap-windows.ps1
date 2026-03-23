@@ -82,26 +82,47 @@ if ($NonInteractive) { Log "Running in CI environment." }
 # =============================================================================
 # PLATFORM GUARD
 # =============================================================================
-if ($PSVersionTable.Platform -and $PSVersionTable.Platform -ne "Win32NT") {
+if ($env:OS -ne "Windows_NT") {
     Fatal "This script is for Windows only.`nFor Linux use scripts/bootstrap-deps.sh, for macOS use scripts/bootstrap-macos.sh."
 }
-
-$WinVer = [System.Environment]::OSVersion.Version
-Log "Detected: Windows $($WinVer.Major).$($WinVer.Minor) (build $($WinVer.Build))"
-Log ""
 
 # =============================================================================
 # WINGET CHECK
 # =============================================================================
-# winget ships with Windows 10 1809+ / Windows 11 and all GitHub-hosted
-# Windows runners. If it is somehow absent we cannot auto-install anything,
-# so fail clearly rather than silently skipping packages.
-# =============================================================================
 Log "Checking winget..."
-if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+
+$WingetAvailable = $false
+$WingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+
+if ($null -ne $WingetCmd) {
+    $WingetAvailable = $true
+    Log "winget found: $($WingetCmd.Source)"
+}
+elseif ($NonInteractive) {
+    Log "winget not found in CI. Continuing without winget and validating preinstalled tools instead."
+}
+else {
     Fatal "winget not found. It ships with Windows 10 1809 and later.`nInstall the App Installer package from the Microsoft Store, then re-run.`nSee: https://aka.ms/getwinget"
 }
-Log "winget is available: $(winget --version)"
+
+Log ""
+
+# =============================================================================
+# CHOCOLATEY CHECK (CI FALLBACK)
+# =============================================================================
+Log "Checking Chocolatey..."
+
+$ChocoAvailable = $false
+$ChocoCmd = Get-Command choco -ErrorAction SilentlyContinue
+
+if ($null -ne $ChocoCmd) {
+    $ChocoAvailable = $true
+    Log "Chocolatey found: $($ChocoCmd.Source)"
+}
+elseif ($NonInteractive) {
+    Log "Chocolatey not found in CI."
+}
+
 Log ""
 
 # =============================================================================
@@ -111,7 +132,8 @@ Log ""
 #   Id          winget package ID (exact, case-insensitive)
 #   Binary      executable name to check with Get-Command (empty = always install)
 #   Description human-readable name shown in output
-#   CiRequired  if $true, fail in CI when missing rather than offering to install
+#   CiRequired  marks tools that are required for a successful build.
+#               In CI, missing tools may be installed automatically if Chocolatey is available.
 #
 # Groups mirror the pattern established in bootstrap-deps.sh and
 # bootstrap-macos.sh so the three files are easy to maintain in parallel.
@@ -172,6 +194,67 @@ if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
 }
 
 # =============================================================================
+# NASM DISCOVERY / PATH SELF-HEAL
+# nasm is sometimes installed but not visible on PATH in the current session,
+# and winget layouts can vary. Search several likely locations and add the
+# containing directory to PATH if found.
+# =============================================================================
+function Find-NasmExe {
+    $cmd = Get-Command nasm -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) {
+        return $cmd.Source
+    }
+
+    $candidates = @(
+        "$env:LOCALAPPDATA\bin\NASM\nasm.exe",
+        "$env:ProgramFiles\NASM\nasm.exe",
+        "${env:ProgramFiles(x86)}\NASM\nasm.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Links\nasm.exe",
+        "$env:LOCALAPPDATA\Microsoft\WindowsApps\nasm.exe",
+        "$env:USERPROFILE\vcpkg\downloads\tools\nasm\nasm-3.01\nasm.exe",
+        "$env:USERPROFILE\vcpkg-downloads\tools\nasm\nasm-3.01\nasm.exe"
+    )
+
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path $p)) {
+            return $p
+        }
+    }
+
+    $searchRoots = @(
+        (Join-Path $env:LOCALAPPDATA "bin\NASM"),
+        (Join-Path $env:USERPROFILE "vcpkg\downloads\tools\nasm"),
+        (Join-Path $env:USERPROFILE "vcpkg-downloads\tools\nasm")
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
+    foreach ($root in $searchRoots) {
+        $found = Get-ChildItem -Path $root -Recurse -Filter nasm.exe -File -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+        if ($found) {
+            return $found.FullName
+        }
+    }
+
+    return $null
+}
+
+function Ensure-NasmOnPath {
+    $nasmExe = Find-NasmExe
+    if ($nasmExe) {
+        $nasmDir = Split-Path $nasmExe -Parent
+        $pathParts = $env:PATH -split ';'
+        if ($pathParts -notcontains $nasmDir) {
+            $env:PATH = "$nasmDir;$env:PATH"
+        }
+        Log "NASM found: $nasmExe"
+        return $true
+    }
+    return $false
+}
+
+Ensure-NasmOnPath | Out-Null
+
+# =============================================================================
 # DRY-RUN MODE
 # =============================================================================
 if ($DryRun) {
@@ -179,7 +262,11 @@ if ($DryRun) {
     Log ""
     Log "Packages that would be checked/installed:"
     foreach ($Pkg in $AllPkgs) {
-        $Status = if (Get-Command $Pkg.Binary -ErrorAction SilentlyContinue) { "already installed" } else { "MISSING" }
+        if ($Pkg.Binary -eq "nasm") {
+            $Status = if (Ensure-NasmOnPath) { "already installed" } else { "MISSING" }
+        } else {
+            $Status = if (Get-Command $Pkg.Binary -ErrorAction SilentlyContinue) { "already installed" } else { "MISSING" }
+        }
         Log "  $($Pkg.Description.PadRight(30)) winget id: $($Pkg.Id)  [$Status]"
     }
     Log ""
@@ -196,16 +283,21 @@ Log ""
 $PkgsToInstall = @()
 foreach ($Pkg in $AllPkgs) {
     $Found = $false
-    if ($Pkg.Binary) {
+
+    if ($Pkg.Binary -eq "nasm") {
+        $Found = Ensure-NasmOnPath
+    }
+    elseif ($Pkg.Binary) {
         $Found = [bool](Get-Command $Pkg.Binary -ErrorAction SilentlyContinue)
     }
+
     if (-not $Found) {
         $PkgsToInstall += $Pkg
     }
 }
 
 # Deduplicate by Id in case NSIS appears twice
-$PkgsToInstall = $PkgsToInstall | Sort-Object Id -Unique
+$PkgsToInstall = @($PkgsToInstall | Sort-Object Id -Unique)
 
 if ($PkgsToInstall.Count -eq 0) {
     Log "All required tools are already installed."
@@ -217,13 +309,14 @@ if ($PkgsToInstall.Count -eq 0) {
     }
     Log ""
 
-    # In CI, CiRequired packages must already be present on the runner image.
-    # winget installs in CI are slow and may require PATH refresh / reboot.
-    $CiMissing = $PkgsToInstall | Where-Object { $_.CiRequired }
-    if ($NonInteractive -and $CiMissing.Count -gt 0) {
-        Fatal "The following required tools are missing from the CI runner image:`n" +
-              ($CiMissing | ForEach-Object { "  - $($_.Description) (winget: $($_.Id))" } | Out-String) +
-              "`nEnsure the runner image or a prior workflow step installs these tools."
+    if (-not $WingetAvailable -and -not $ChocoAvailable) {
+        if ($NonInteractive) {
+            Fatal "Neither winget nor Chocolatey is available in CI, and the following tools are missing:`n" +
+                  ($PkgsToInstall | ForEach-Object { "  - $($_.Description)" } | Out-String) +
+                  "`nUse a runner image with these tools preinstalled, or install them in a prior workflow step."
+        } else {
+            Fatal "Neither winget nor Chocolatey is available, and required tools are missing.`nInstall winget/App Installer or install the missing tools manually, then re-run."
+        }
     }
 
     if (-not $NonInteractive) {
@@ -235,19 +328,45 @@ if ($PkgsToInstall.Count -eq 0) {
     }
 
     foreach ($Pkg in $PkgsToInstall) {
-        Log "Installing $($Pkg.Description) ($($Pkg.Id))..."
-        $WingetArgs = @(
-            "install", "--exact", "--id", $Pkg.Id,
-            "--accept-package-agreements", "--accept-source-agreements",
-            "--silent"
-        )
-        winget @WingetArgs
-        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {
-            # -1978335189 (0x8A150007) = APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED
-            # winget returns this when a newer version is already present; treat as success.
-            Warn "$($Pkg.Description) install returned exit code $LASTEXITCODE -- may need PATH refresh or reboot."
-        } else {
-            Log "$($Pkg.Description) installed."
+        Log "Installing $($Pkg.Description)..."
+
+        if ($WingetAvailable -and -not $NonInteractive) {
+            $WingetArgs = @(
+                "install", "--exact", "--id", $Pkg.Id,
+                "--accept-package-agreements", "--accept-source-agreements",
+                "--silent"
+            )
+            winget @WingetArgs
+            if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {
+                Warn "$($Pkg.Description) install returned exit code $LASTEXITCODE -- may need PATH refresh or reboot."
+            } else {
+                Log "$($Pkg.Description) installed via winget."
+            }
+        }
+        elseif ($ChocoAvailable) {
+            $ChocoName = switch ($Pkg.Binary) {
+                "nasm"      { "nasm" }
+                "cmake"     { "cmake" }
+                "git"       { "git" }
+                "ninja"     { "ninja" }
+                "python"    { "python" }
+                "makensis"  { "nsis" }
+                default     { $null }
+            }
+
+            if (-not $ChocoName) {
+                Fatal "No Chocolatey package mapping is defined for $($Pkg.Description)."
+            }
+
+            choco install $ChocoName -y --no-progress
+            if ($LASTEXITCODE -ne 0) {
+                Fatal "Chocolatey failed to install $($Pkg.Description)."
+            } else {
+                Log "$($Pkg.Description) installed via Chocolatey."
+            }
+        }
+        else {
+            Fatal "No package manager is available to install $($Pkg.Description)."
         }
     }
 
@@ -266,7 +385,11 @@ if ($PkgsToInstall.Count -eq 0) {
         }
     }
 
+    # Re-add NASM if it still isn't on the refreshed PATH
+    Ensure-NasmOnPath | Out-Null
+
     Log ""
+
 }
 
 # =============================================================================
@@ -353,13 +476,19 @@ Log ""
 # =============================================================================
 Log "Verifying key tools on PATH..."
 
-$VerifyTools = @("cmake", "git", "ninja", "nasm", "python")
+$VerifyTools = @("cmake", "git", "ninja", "python")
 $MissingAfter = @()
 foreach ($Tool in $VerifyTools) {
     if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
         $MissingAfter += $Tool
     }
 }
+
+if (-not (Ensure-NasmOnPath)) {
+    $MissingAfter += "nasm"
+}
+
+$MissingAfter = @($MissingAfter)
 
 if ($MissingAfter.Count -gt 0) {
     Warn "The following tools are still not on PATH after installation:"

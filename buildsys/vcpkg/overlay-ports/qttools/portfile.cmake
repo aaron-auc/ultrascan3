@@ -5,6 +5,8 @@ set(${PORT}_PATCHES
     devendor-litehtml.patch
   )
 
+#TODO check features and setup: (means force features!)
+
 # -- The following OPTIONAL packages have not been found:
 
  # * Qt6AxContainer
@@ -34,6 +36,7 @@ set(${PORT}_PATCHES
 # General features:
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
+    "assistant" FEATURE_assistant
     "designer" FEATURE_designer
     "linguist" FEATURE_linguist
     "qdbus" FEATURE_qdbus
@@ -50,13 +53,6 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     "qml"    CMAKE_DISABLE_FIND_PACKAGE_Qt6Quick
     "qml"    CMAKE_DISABLE_FIND_PACKAGE_Qt6QuickWidgets
     )
-
-# Force Assistant OFF unless explicitly requested
-if("assistant" IN_LIST FEATURES)
-    list(APPEND FEATURE_OPTIONS -DFEATURE_assistant=ON)
-else()
-    list(APPEND FEATURE_OPTIONS -DFEATURE_assistant=OFF)
-endif()
 
  set(TOOL_NAMES 
         assistant
