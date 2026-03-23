@@ -293,6 +293,7 @@ echo "=========================================="
 df -h
 echo ""
 
+cd "$SOURCE_DIR"
 "$US3_VCPKG_ROOT/vcpkg" install "${VCPKG_ARGS[@]}"
 
 echo ""
