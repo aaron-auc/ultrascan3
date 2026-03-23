@@ -404,11 +404,16 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   # gperf: in AppStream — same role as on Debian
   # bison: in AppStream — same role as on Debian
   # flex: in AppStream — same role as on Debian
+  # perl-IPC-Cmd: required by vcpkg's openssl portfile (unix/portfile.cmake uses
+  #   IPC::Cmd to invoke subprocesses during the OpenSSL Configure/build steps).
+  #   Present on Ubuntu as part of perl-base but NOT installed by default on
+  #   Rocky/RHEL 8 — its absence causes a hard BUILD_FAILED for openssl.
   PKGS_CODEGEN=(
     nasm
     gperf
     bison
     flex
+    perl-IPC-Cmd
   )
 
   # --- Python (Sphinx documentation) ----------------------------------------
@@ -730,4 +735,3 @@ log "Next steps:"
 log "  1. Run 'bash scripts/build.sh --help' to see build options."
 log "  2. First build: 'bash scripts/build.sh --qt5-qwt616'  (or --qt6)"
 log "     (vcpkg will build all library dependencies; allow 30-45 minutes)"
-
