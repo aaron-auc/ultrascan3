@@ -21,9 +21,9 @@ on:
 
       platforms:
         # Choose a single platform, a named group, or "all".
-        # "macos only"  = macos-15 + macos-13
+        # "macos only"  = macos-15 + macos-15-intel
         # "linux only"  = ubuntu-24.04 + ubuntu-24.04-arm
-        # "all"         = every platform above plus windows-2022
+        # "all"         = every platform above plus windows-2022 and rocky8
         description: "Platforms to build"
         required: true
         default: "macos-arm (macos-15)"
@@ -35,6 +35,7 @@ on:
           - "ubuntu-x64 (ubuntu-24.04)"
           - "ubuntu-arm (ubuntu-24.04-arm)"
           - "windows (windows-2022)"
+          - "rocky8"
           - "macos only"
           - "linux only"
 
@@ -55,7 +56,7 @@ on:
         # qt6          — Qt 6 + Qwt 6.3.0  (default on macOS and Windows)
         # qt5-qwt616   — Qt 5 + Qwt 6.1.6  (default on Linux)
         # qt5-qwt630   — Qt 5 + Qwt 6.3.0
-        description: "Qt variant"
+        description: "Qt variant (ignored for rocky8 — always qt5-qwt616)"
         required: true
         default: "qt6"
         type: choice
@@ -115,8 +116,8 @@ jobs:
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
   # -------------------------------------------------------------------------
-  # macOS Intel (macos-15, x86-64)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-macos-13
+  # macOS Intel (macos-15-intel, x86-64)
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-macos-15-intel
   # -------------------------------------------------------------------------
   build-macos-intel:
     name: "macOS Intel (macos-15-intel)"
@@ -193,3 +194,26 @@ jobs:
       artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
+  # -------------------------------------------------------------------------
+  # Rocky Linux 8 x64 (rockylinux:8 container on ubuntu-24.04)
+  # Qt5+Qwt6.1.6 only — qt_variant input is ignored for this platform.
+  # cache_os_label isolates Rocky 8 binaries from Ubuntu binaries in the
+  # vcpkg cache (different glibc version).
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-qt5-qwt616-ubuntu-24.04
+  # -------------------------------------------------------------------------
+  build-rocky8:
+    name: "Rocky Linux 8 x64"
+    if: |
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'rocky8' ||
+      inputs.platforms == 'linux only'
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+    with:
+      ref:                     ${{ inputs.ref }}
+      runner:                  ubuntu-24.04
+      cache_os_label:          rocky8
+      qt_variant:              qt5-qwt616
+      profile:                 ${{ inputs.profile }}
+      clean_tier:              ${{ inputs.clean_tier }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-qt5-qwt616', github.run_number, inputs.ref, inputs.profile) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
