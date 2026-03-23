@@ -227,11 +227,16 @@ if [ "$DISTRO_FAMILY" = "debian" ]; then
   # gperf: required by the Qt5/Qt6 qtbase vcpkg port for keyword hash tables
   # bison: required by libmariadb connector port (SQL parser grammar)
   # flex: required by libmariadb connector port (SQL lexer)
+  # libtime-piece-perl: provides Time::Piece, required by the OpenSSL Configure
+  #   script invoked during vcpkg's openssl port build.  It is a core Perl module
+  #   but is split into a separate package on Ubuntu/Debian and is not installed
+  #   by default on GitHub-hosted Ubuntu 24.04 runners.
   PKGS_CODEGEN=(
     nasm
     gperf
     bison
     flex
+    libtime-piece-perl
   )
 
   # --- Python (Sphinx documentation) ----------------------------------------
