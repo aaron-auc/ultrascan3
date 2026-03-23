@@ -268,8 +268,8 @@ VCPKG_ARGS=(
   "--triplet=${TRIPLET}"
   "--host-triplet=${STATIC_TRIPLET}"
   "--overlay-triplets=${OVERLAY_TRIPLETS}"
-  "--x-no-default-features"
 )
+
 if [ -d "$OVERLAY_PORTS" ]; then
   VCPKG_ARGS+=("--overlay-ports=${OVERLAY_PORTS}")
 fi
