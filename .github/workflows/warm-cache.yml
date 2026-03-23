@@ -30,6 +30,7 @@ on:
           - all
           - "ubuntu-x64 (ubuntu-24.04)"
           - "macos-arm (macos-15)"
+          - rocky8
 
       qt_variant:
         description: "Qt variant"
@@ -38,7 +39,7 @@ on:
         default: qt6
         options:
           - qt6
-          - qt5-qwt630
+          - qt5-qwt616
 
 permissions:
   contents: read
