@@ -26,7 +26,7 @@ BUILD_PKG=false        # --pkg: build platform-native package
 PROFILE="APP"          # default profile
 QT_VARIANT="qt6"       # qt6 | qt5-qwt616 | qt5-qwt630
 ARCH=""
-US3_VCPKG_ROOT=""
+US3_VCPKG_ROOT="${US3_VCPKG_ROOT:-}"
 
 # Parse options
 while [[ $# -gt 0 ]]; do
@@ -72,11 +72,9 @@ while [[ $# -gt 0 ]]; do
       echo "                                    Output: build/<preset>/UltraScan3-<version>-macOS.pkg"
       echo "                         Linux   -> portable tar.gz archive"
       echo "                                    Output: build/<preset>/UltraScan3-<version>-Linux-<arch>.tar.gz"
-      echo "                         Windows -> NSIS installer"
-      echo "                                    Output: build/<preset>/UltraScan3-<version>-Windows.exe"
       echo "  --qt6                Build with Qt6 + Qwt6.3.0 [default on macOS]"
-      echo "  --qt5-qwt616         Build with Qt5 + Qwt6.1.6 [default on Linux/Windows]"
-      echo "  --qt5-qwt630         Build with Qt5 + Qwt6.3.0"
+      echo "  --qt5-qwt616         Build with Qt5 + Qwt6.1.6 [Linux only]"
+      echo "  --qt5-qwt630         Build with Qt5 + Qwt6.3.0 [Linux only]"
       echo "  --arch x64           Target x64 architecture [default: auto-detect]"
       echo "  --arch arm64         Target ARM64 architecture"
       echo "  --vcpkg-root <path>  Path to vcpkg installation"
@@ -96,7 +94,7 @@ while [[ $# -gt 0 ]]; do
       echo "EXAMPLES:"
       echo "  $0                        # Build only"
       echo "  $0 TEST                   # Build with TEST profile"
-      echo "  $0 --qt5-qwt616           # Build Qt5+Qwt6.1.6"
+      echo "  $0 --qt5-qwt616           # Build Qt5+Qwt6.1.6 (Linux only)"
       echo "  $0 --rebuild              # Wipe build dir, rebuild UltraScan only"
       echo "  $0 --clean                # Full dep reinstall (after vcpkg.json changes)"
       echo "  $0 --clean --purge-cache  # Nuke everything, recompile deps from source"
@@ -108,6 +106,8 @@ while [[ $# -gt 0 ]]; do
       echo "  US3_BUILD_JOBS      Override number of parallel build jobs"
       echo "  US3_VCPKG_ROOT      Override vcpkg location (default: \$HOME/vcpkg)"
       echo "  US3_VCPKG_CACHE     Override binary cache path (default: \$HOME/.vcpkg-cache)"
+      echo "  US3_VCPKG_DOWNLOADS Override downloads cache path"
+      echo "  US3_SCRATCH_ROOT    Override Linux CI scratch root"
       exit 0
       ;;
     [Aa][Pp][Pp]|[Tt][Ee][Ss][Tt]|[Hh][Pp][Cc])
@@ -132,8 +132,8 @@ elif [[ "$OSTYPE" == "linux-gnu"* || "$(uname -s)" == "Linux" ]]; then
   PLATFORM="Linux"
   PLATFORM_PREFIX="linux"
 elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-  PLATFORM="Windows"
-  PLATFORM_PREFIX="windows"
+  echo "ERROR: On Windows, use scripts/build.ps1 or scripts/build.bat instead of build.sh"
+  exit 1
 else
   _UNAME=$(uname -s 2>/dev/null || echo "unknown")
   echo "ERROR: Unsupported platform: OSTYPE=${OSTYPE:-unset}, uname=${_UNAME}"
@@ -182,15 +182,17 @@ fi
 # DERIVE CONFIGURE AND BUILD PRESET NAMES
 # =============================================================================
 ARM64_SUFFIX=""
-if [[ "$PLATFORM" == "Windows" && "$ARCH" == "arm64" ]]; then
-  ARM64_SUFFIX="-arm64"
+X64_SUFFIX=""
+
+if [[ "$PLATFORM" == "macOS" && "$ARCH" == "x64" ]]; then
+  X64_SUFFIX="-x64"
 fi
 
 # HPC on Linux and macOS uses dedicated presets (separate binary dir, no GUI)
 if [[ "$PROFILE" == "HPC" && ( "$PLATFORM" == "Linux" || "$PLATFORM" == "macOS" ) ]]; then
-  CONFIGURE_PRESET="${PLATFORM_PREFIX}-hpc-release-${QT_VARIANT}"
+  CONFIGURE_PRESET="${PLATFORM_PREFIX}-hpc-release-${QT_VARIANT}${X64_SUFFIX}"
 else
-  CONFIGURE_PRESET="${PLATFORM_PREFIX}-release-${QT_VARIANT}${ARM64_SUFFIX}"
+  CONFIGURE_PRESET="${PLATFORM_PREFIX}-release-${QT_VARIANT}${ARM64_SUFFIX}${X64_SUFFIX}"
 fi
 BUILD_PRESET="build-${CONFIGURE_PRESET}"
 
@@ -198,6 +200,15 @@ echo "Platform               : $PLATFORM ($ARCH)"
 echo "Configure preset       : $CONFIGURE_PRESET"
 echo "Build preset           : $BUILD_PRESET"
 echo ""
+
+# Qt5 is not supported on macOS — the vcpkg qt5-base port does not install
+# headers correctly on macOS. Use --qt6 for macOS builds.
+if [ "$PLATFORM" = "macOS" ] && [[ "$QT_VARIANT" == qt5* ]]; then
+  echo "ERROR: Qt5 builds are not supported on macOS."
+  echo "  The vcpkg qt5-base port does not correctly install headers on macOS."
+  echo "  Use --qt6 instead:  $0 --qt6"
+  exit 1
+fi
 
 # =============================================================================
 # DETERMINE BUILD PARALLELISM
@@ -214,8 +225,12 @@ if [ -n "${US3_BUILD_JOBS:-}" ]; then
   # Explicit override always wins
   BUILD_JOBS="$US3_BUILD_JOBS"
 elif [ "${CI:-false}" = "true" ]; then
-  # CI runners are dedicated -- use every core
-  BUILD_JOBS="$CORES"
+  # Linux Qt6 builds on GitHub runners can run out of disk at higher parallelism
+  if [ "$PLATFORM" = "Linux" ] && [ "$QT_VARIANT" = "qt6" ]; then
+    BUILD_JOBS=2
+  else
+    BUILD_JOBS="$CORES"
+  fi
 else
   # Local builds: leave ~10% headroom to keep the machine usable
   BUILD_JOBS=$((CORES * 9 / 10))
@@ -237,86 +252,52 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # =============================================================================
-# CHECK REQUIRED TOOLS
+# LINUX CI SCRATCH / DISK MANAGEMENT
+# On GitHub-hosted Ubuntu runners, root disk space is tight. Put large mutable
+# build state on scratch storage in CI when possible.
 # =============================================================================
-REQUIRED_TOOLS=(cmake git)
+US3_SCRATCH_ROOT="${US3_SCRATCH_ROOT:-}"
 
-if [[ "$PLATFORM" == "macOS" ]]; then
-  REQUIRED_TOOLS+=(xcodebuild xcrun)
-elif [[ "$PLATFORM" == "Linux" ]]; then
-  REQUIRED_TOOLS+=(g++)
-fi
+if [ "$PLATFORM" = "Linux" ]; then
+  echo "=========================================="
+  echo "Linux disk preflight"
+  echo "=========================================="
+  df -h
 
-if [ "$BUILD_PKG" = true ] && [ "$PLATFORM" = "macOS" ] && [ "$PROFILE" != "HPC" ]; then
-  REQUIRED_TOOLS+=(pkgbuild productbuild rsync)
-fi
+  if [ "${CI:-false}" = "true" ]; then
+    echo "Freeing large preinstalled tool stacks not needed for UltraScan..."
+    sudo rm -rf /usr/share/dotnet || true
+    sudo rm -rf /opt/ghc || true
+    sudo rm -rf /usr/local/lib/android || true
+    sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+    echo ""
+    echo "Disk after cleanup:"
+    df -h
 
-# HPC profile requires an MPI implementation
-if [ "$PROFILE" = "HPC" ]; then
-  REQUIRED_TOOLS+=(mpicxx)
-fi
-
-MISSING_TOOLS=()
-for tool in "${REQUIRED_TOOLS[@]}"; do
-  if ! command -v "$tool" &>/dev/null; then
-    MISSING_TOOLS+=("$tool")
-  fi
-done
-
-if [ ${#MISSING_TOOLS[@]} -ne 0 ]; then
-  echo "ERROR: Missing required tools: ${MISSING_TOOLS[*]}"
-  echo ""
-  # Check if MPI is among the missing tools and give a targeted hint
-  for _t in "${MISSING_TOOLS[@]}"; do
-    if [ "$_t" = "mpicxx" ]; then
-      echo "MPI is required for the HPC profile."
-      if [ "$PLATFORM" == "macOS" ]; then
-        echo "  Install Open MPI via Homebrew:"
-        echo "    brew install open-mpi"
-        echo ""
-        echo "  NOTE: Open MPI's Homebrew bottle requires the Xcode Command Line Tools"
-        echo "  installed at /Library/Developer/CommandLineTools (separate from Xcode.app)."
-        echo "  If 'brew install open-mpi' fails with a GCC/CLT error, run first:"
-        echo "    xcode-select --install"
-        echo "  then re-run brew install open-mpi."
-      elif [ "$PLATFORM" == "Linux" ]; then
-        echo "  Install Open MPI (Debian/Ubuntu):"
-        echo "    sudo apt-get install -y libopenmpi-dev openmpi-bin"
-        echo "  Or MPICH:"
-        echo "    sudo apt-get install -y libmpich-dev mpich"
-        echo "  On HPC clusters, load the site MPI module instead:"
-        echo "    module load openmpi  (or: module load mpich)"
+    # In CI, prefer /mnt only if it is actually a different filesystem.
+    if [ -z "$US3_SCRATCH_ROOT" ]; then
+      if [ -d /mnt ] && [ "$(stat -c '%d' / 2>/dev/null || echo x)" != "$(stat -c '%d' /mnt 2>/dev/null || echo x)" ]; then
+        US3_SCRATCH_ROOT="/mnt/us3"
+      else
+        US3_SCRATCH_ROOT="$HOME/us3-scratch"
       fi
-      echo ""
     fi
-  done
-  if [ "$PLATFORM" == "macOS" ]; then
-    # Generic CLT hint only when MPI wasn't already the issue (it includes its own CLT note)
-    _mpi_missing=false
-    for _t2 in "${MISSING_TOOLS[@]}"; do [ "$_t2" = "mpicxx" ] && _mpi_missing=true; done
-    if [ "$_mpi_missing" = false ]; then
-      echo "On macOS, install Xcode command line tools:"
-      echo "  xcode-select --install"
-    fi
-  elif [ "$PLATFORM" == "Linux" ]; then
-    echo "On Debian/Ubuntu, run:"
-    echo "  sudo apt-get update && sudo apt-get install -y build-essential cmake git"
-  elif [ "$PLATFORM" == "Windows" ]; then
-    echo "On Windows (MSYS/MinGW), install cmake, git, and a compiler toolchain."
   fi
-  exit 1
+
+  # Only create scratch directories when a scratch root is actually in use.
+  if [ -n "$US3_SCRATCH_ROOT" ]; then
+    mkdir -p "$US3_SCRATCH_ROOT"/{vcpkg-cache,vcpkg-downloads,build}
+    echo "Using Linux scratch root: $US3_SCRATCH_ROOT"
+  else
+    echo "Using standard Linux home-directory paths."
+  fi
+  echo ""
 fi
 
-echo "All required tools are available."
-echo ""
-
 # =============================================================================
-# macOS BOOTSTRAP
-# Delegates to bootstrap-macos.sh, which is the single authoritative source
-# for Homebrew-level prerequisites (cmake, ninja, nasm, pkg-config, python3,
-# and optionally open-mpi for HPC).  It is idempotent: exits immediately
-# with no side effects when all packages are already installed.
-# The HPC profile requires MPI, so --hpc is passed in that case.
+# PLATFORM BOOTSTRAP
+# macOS readiness is owned by bootstrap-macos.sh.
+# Linux OS/package readiness is owned by bootstrap-linux.sh.
 # =============================================================================
 if [ "$PLATFORM" = "macOS" ]; then
   _BOOTSTRAP="${SCRIPT_DIR}/bootstrap-macos.sh"
@@ -327,95 +308,33 @@ if [ "$PLATFORM" = "macOS" ]; then
   fi
 
   _BOOTSTRAP_ARGS=()
+  [ "$PROFILE" = "HPC" ] && _BOOTSTRAP_ARGS+=("--hpc")
+  [ "$BUILD_PKG" = true ] && [ "$PROFILE" != "HPC" ] && _BOOTSTRAP_ARGS+=("--pkg")
 
-  if [ "$PROFILE" = "HPC" ]; then
-    _BOOTSTRAP_ARGS+=("--hpc")
-  fi
-
-  if [ "${#_BOOTSTRAP_ARGS[@]}" -gt 0 ]; then
+  if [ ${#_BOOTSTRAP_ARGS[@]} -gt 0 ]; then
     bash "$_BOOTSTRAP" "${_BOOTSTRAP_ARGS[@]}"
   else
     bash "$_BOOTSTRAP"
   fi
   echo ""
-fi
 
-# =============================================================================
-# XCODE 15/16 SETUP ON macOS
-# Runs after bootstrap so Homebrew tools are already on PATH.
-# bootstrap-macos.sh verified that the CLT exists; here we select the right
-# Xcode.app version for the build (requires sudo xcode-select --switch).
-# =============================================================================
-if [ "$PLATFORM" = "macOS" ]; then
-  CURRENT_XCODE_PATH=$(xcode-select -p || echo "")
-  XCODE_DEFAULT_PATH="/Applications/Xcode.app/Contents/Developer"
-
-  echo "Checking Xcode configuration..."
-  echo "Current Xcode path: ${CURRENT_XCODE_PATH:-<not set>}"
-  echo ""
-
-  DESIRED_XCODE_PATH=""
-  XCODE_CANDIDATES=()
-  for app in /Applications/Xcode-15*.app /Applications/Xcode-16*.app; do
-    [ -d "$app" ] && XCODE_CANDIDATES+=("$app/Contents/Developer")
-  done
-  XCODE_CANDIDATES+=("$XCODE_DEFAULT_PATH")
-
-  for XCODE_CANDIDATE in "${XCODE_CANDIDATES[@]}"; do
-    if [ -d "$XCODE_CANDIDATE" ]; then
-      XCODE_APP=$(dirname "$(dirname "$XCODE_CANDIDATE")")
-      XCODE_PLIST="$XCODE_APP/Contents/Info.plist"
-      if [ -f "$XCODE_PLIST" ]; then
-        XCODE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$XCODE_PLIST" 2>/dev/null || echo "0")
-        XCODE_MAJOR=$(echo "$XCODE_VERSION" | cut -d. -f1)
-        if [ "$XCODE_MAJOR" -ge 15 ] 2>/dev/null; then
-          DESIRED_XCODE_PATH="$XCODE_CANDIDATE"
-          echo "Found Xcode $XCODE_VERSION at: $XCODE_CANDIDATE"
-          break
-        fi
-      fi
-    fi
-  done
-
-  if [ -n "$DESIRED_XCODE_PATH" ]; then
-    echo "Compatible Xcode path: $DESIRED_XCODE_PATH"
-    if [ "$CURRENT_XCODE_PATH" != "$DESIRED_XCODE_PATH" ]; then
-      echo "Xcode 15/16 is installed but not active."
-      if [ "$NON_INTERACTIVE" = false ]; then
-        echo "About to switch Xcode to:"
-        echo "  $DESIRED_XCODE_PATH"
-        echo ""
-        read -rp "Proceed with 'sudo xcode-select --switch ...'? [y/N] " answer
-        if [[ "$answer" =~ ^[Yy]$ ]]; then
-          echo "Switching Xcode..."
-          sudo xcode-select --switch "$DESIRED_XCODE_PATH"
-          echo "Xcode is now set to: $(xcode-select -p)"
-        else
-          echo "Skipping Xcode switch. Continuing with current Xcode."
-        fi
-      else
-        echo "Non-interactive mode: switching Xcode automatically..."
-        sudo xcode-select --switch "$DESIRED_XCODE_PATH"
-        echo "Xcode is now set to: $(xcode-select -p)"
-      fi
-    else
-      echo "Compatible Xcode is already active."
-    fi
-  else
-    echo "Xcode 15 or 16 not found. Checked:"
-    echo "  /Applications/Xcode-15*.app"
-    echo "  /Applications/Xcode-16*.app"
-    echo "  $XCODE_DEFAULT_PATH"
-    echo ""
-    echo "Please install Xcode 15 or 16 from the App Store or developer.apple.com."
-    echo ""
-    if [ "$NON_INTERACTIVE" = false ]; then
-      exit 1
-    else
-      echo "WARNING: Continuing in CI mode, build may fail..."
-    fi
+elif [ "$PLATFORM" = "Linux" ]; then
+  _BOOTSTRAP="${SCRIPT_DIR}/bootstrap-linux.sh"
+  if [ ! -f "$_BOOTSTRAP" ]; then
+    echo "ERROR: bootstrap-linux.sh not found at $_BOOTSTRAP"
+    echo "Please ensure scripts/bootstrap-linux.sh exists in the repository."
+    exit 1
   fi
 
+  _BOOTSTRAP_ARGS=()
+  [ "$PROFILE" = "HPC" ] && _BOOTSTRAP_ARGS+=("--hpc")
+  [ "$BUILD_PKG" = true ] && [ "$PROFILE" != "HPC" ] && _BOOTSTRAP_ARGS+=("--pkg")
+
+  if [ ${#_BOOTSTRAP_ARGS[@]} -gt 0 ]; then
+    bash "$_BOOTSTRAP" "${_BOOTSTRAP_ARGS[@]}"
+  else
+    bash "$_BOOTSTRAP"
+  fi
   echo ""
 fi
 
@@ -426,12 +345,17 @@ fi
 if [ -n "$US3_VCPKG_ROOT" ]; then
   echo "Using vcpkg from --vcpkg-root argument: $US3_VCPKG_ROOT"
 elif [ -n "${US3_VCPKG_ROOT:-}" ]; then
+  US3_VCPKG_ROOT="${US3_VCPKG_ROOT}"
   echo "Using vcpkg from US3_VCPKG_ROOT environment variable: $US3_VCPKG_ROOT"
 elif [ -f "${SOURCE_DIR}/vcpkg/bootstrap-vcpkg.sh" ]; then
   US3_VCPKG_ROOT="${SOURCE_DIR}/vcpkg"
   echo "Using vcpkg from source tree: $US3_VCPKG_ROOT"
 else
-  US3_VCPKG_ROOT="$HOME/vcpkg"
+  if [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ] && [ -n "${US3_SCRATCH_ROOT:-}" ]; then
+    US3_VCPKG_ROOT="$US3_SCRATCH_ROOT/vcpkg"
+  else
+    US3_VCPKG_ROOT="$HOME/vcpkg"
+  fi
   echo "Using vcpkg from default location: $US3_VCPKG_ROOT"
 fi
 
@@ -451,24 +375,53 @@ fi
 if [ ! -x "$US3_VCPKG_ROOT/vcpkg" ]; then
   echo ""
   echo "Bootstrapping vcpkg at $US3_VCPKG_ROOT..."
-  if [[ "$PLATFORM" == "Windows" ]]; then
-    ( cd "$US3_VCPKG_ROOT" && ./bootstrap-vcpkg.bat -disableMetrics )
-  else
-    # -disableMetrics suppresses the telemetry consent prompt which can
-    # stall non-interactive CI environments on first bootstrap.
-    "$US3_VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-  fi
+
+  # -disableMetrics suppresses the telemetry consent prompt which can
+  # stall non-interactive CI environments on first bootstrap.
+  "$US3_VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 fi
 
 export VCPKG_ROOT="$US3_VCPKG_ROOT"
 export VCPKG_INSTALLED_DIR="$US3_VCPKG_ROOT/installed"
 
-# Allow CI to override the binary cache location via env var.
-# Default to ~/.vcpkg-cache which persists across runs on self-hosted runners.
-# On ephemeral runners set US3_VCPKG_CACHE to a mounted cache volume path.
-US3_VCPKG_CACHE="${US3_VCPKG_CACHE:-$HOME/.vcpkg-cache}"
+# Allow explicit override of the binary cache location via env var.
+# In Linux CI, prefer the scratch root when available to reduce pressure on
+# the runner's root filesystem. Otherwise default to ~/.vcpkg-cache.
+if [ -n "${US3_VCPKG_CACHE:-}" ]; then
+  US3_VCPKG_CACHE="$US3_VCPKG_CACHE"
+elif [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ] && [ -n "${US3_SCRATCH_ROOT:-}" ]; then
+  US3_VCPKG_CACHE="$US3_SCRATCH_ROOT/vcpkg-cache"
+else
+  US3_VCPKG_CACHE="$HOME/.vcpkg-cache"
+fi
+
 mkdir -p "$US3_VCPKG_CACHE"
 export VCPKG_BINARY_SOURCES="clear;files,$US3_VCPKG_CACHE,readwrite"
+
+if [ -n "${US3_VCPKG_DOWNLOADS:-}" ]; then
+  US3_VCPKG_DOWNLOADS="$US3_VCPKG_DOWNLOADS"
+elif [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ] && [ -n "${US3_SCRATCH_ROOT:-}" ]; then
+  US3_VCPKG_DOWNLOADS="$US3_SCRATCH_ROOT/vcpkg-downloads"
+else
+  US3_VCPKG_DOWNLOADS="$HOME/vcpkg-downloads"
+fi
+
+mkdir -p "$US3_VCPKG_DOWNLOADS"
+export US3_VCPKG_DOWNLOADS
+
+# Reduce peak disk usage during vcpkg dependency builds.
+export VCPKG_INSTALL_OPTIONS="--clean-after-build"
+
+if [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ]; then
+  echo "=========================================="
+  echo "Scratch / cache diagnostics"
+  echo "=========================================="
+  df -h
+  echo "scratch root: ${US3_SCRATCH_ROOT:-<unset>}"
+  stat -c '%d %n' / /mnt "$HOME" "${US3_SCRATCH_ROOT:-$HOME}" 2>/dev/null || true
+  du -sh "$US3_VCPKG_CACHE" "$US3_VCPKG_DOWNLOADS" 2>/dev/null || true
+  echo ""
+fi
 
 VCPKG_TOOLCHAIN_FILE="$US3_VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 if [ ! -f "$VCPKG_TOOLCHAIN_FILE" ]; then
@@ -524,22 +477,31 @@ _remove_vcpkg_triplet() {
     rm -rf "$US3_VCPKG_ROOT/buildtrees"
   fi
 
-  # Always wipe the vcpkg bookkeeping directory (status file, .list files,
-  # pending updates) when doing a clean. This is safe: it only tracks what is
-  # in THIS installed/ tree and vcpkg regenerates it on the next install.
-  # Must be done unconditionally -- stale 'half-installed' status entries
-  # survive even when the triplet dir was removed by a prior clean, causing
-  # vcpkg to fail reading pkgconfig files that no longer exist on the next run.
+  # Remove only packages belonging to the selected Qt variant
+  # so Qt5 and Qt6 installs don't clobber each other in the shared triplet.
+  case "$QT_VARIANT" in
+    qt6)
+      local _qt_pattern="qt6|qtbase|qttools|qtsvg|qtmultimedia|qwt-6-3-0-qt6|qwtplot3d-qwt-6-3-0-qt6|litehtml"
+      ;;
+    qt5-qwt616)
+      local _qt_pattern="qt5|qwt-6-1-6|qwtplot3d-qwt-6-1-6"
+      ;;
+    qt5-qwt630)
+      local _qt_pattern="qt5|qwt-6-3-0-qt5|qwtplot3d-qwt-6-3-0-qt5"
+      ;;
+  esac
+
+  echo "Removing vcpkg packages matching Qt variant: $QT_VARIANT"
+  # Get list of installed packages for this triplet matching the Qt variant
+  "$US3_VCPKG_ROOT/vcpkg" list --triplet "$triplet" 2>/dev/null | \
+    grep -E "^(${_qt_pattern}):" | \
+    awk -F: '{print $1}' | \
+    xargs -I{} "$US3_VCPKG_ROOT/vcpkg" remove {}:"$triplet" --recurse 2>/dev/null || true
+
+  # Wipe vcpkg bookkeeping so status is consistent
   if [ -d "$US3_VCPKG_ROOT/installed/vcpkg" ]; then
     echo "Removing vcpkg installed/vcpkg bookkeeping (will be regenerated)..."
     rm -rf "$US3_VCPKG_ROOT/installed/vcpkg"
-  fi
-
-  if [ -d "$US3_VCPKG_ROOT/installed/$triplet" ]; then
-    echo "Removing vcpkg installed packages for triplet: $triplet"
-    rm -rf "$US3_VCPKG_ROOT/installed/$triplet"
-  else
-    echo "vcpkg installed/$triplet does not exist -- nothing to remove"
   fi
 }
 
@@ -590,28 +552,6 @@ echo "  3. Configure and build UltraScan3"
 echo "     Configure preset : $CONFIGURE_PRESET"
 echo "     Build preset     : $BUILD_PRESET"
 echo ""
-
-# =============================================================================
-# LINUX SYSTEM PACKAGE CHECK
-# Delegates to bootstrap-deps.sh, which is the single authoritative source
-# for the OS-level package list.  It is idempotent: exits immediately with no
-# side effects when all packages are already installed (typical on repeat runs).
-# The HPC profile requires MPI, so --hpc is passed in that case.
-# =============================================================================
-if [ "$PLATFORM" == "Linux" ]; then
-  _BOOTSTRAP="${SCRIPT_DIR}/bootstrap-deps.sh"
-  if [ ! -f "$_BOOTSTRAP" ]; then
-    echo "ERROR: bootstrap-deps.sh not found at $_BOOTSTRAP"
-    echo "Please ensure scripts/bootstrap-deps.sh exists in the repository."
-    exit 1
-  fi
-
-  _BOOTSTRAP_ARGS=()
-  [ "$PROFILE" = "HPC" ] && _BOOTSTRAP_ARGS+=("--hpc")
-
-  bash "$_BOOTSTRAP" "${_BOOTSTRAP_ARGS[@]}"
-  echo ""
-fi
 
 # =============================================================================
 # SPHINX CHECK - ensure sphinx-build is on PATH and requirements are installed
@@ -713,16 +653,19 @@ echo ""
 echo "=========================================="
 echo "Ready to build UltraScan3"
 echo "=========================================="
-echo "  Platform         : ${PLATFORM} (${ARCH})"
-echo "  Preset           : ${CONFIGURE_PRESET}"
-echo "  Profile          : ${PROFILE}"
-echo "  Qt variant       : ${QT_VERSION_LABEL}"
-echo "  Installer        : ${BUILD_PKG}"
-echo "  Rebuild          : ${REBUILD}"
-echo "  Clean            : ${CLEAN}"
-echo "  Purge cache      : ${PURGE_CACHE}"
-echo "  vcpkg root       : ${VCPKG_ROOT}"
-echo "  Build jobs       : ${BUILD_JOBS}"
+echo "  Platform            : ${PLATFORM} (${ARCH})"
+echo "  Preset              : ${CONFIGURE_PRESET}"
+echo "  Profile             : ${PROFILE}"
+echo "  Qt variant          : ${QT_VERSION_LABEL}"
+echo "  Installer           : ${BUILD_PKG}"
+echo "  Rebuild             : ${REBUILD}"
+echo "  Clean               : ${CLEAN}"
+echo "  Purge cache         : ${PURGE_CACHE}"
+echo "  vcpkg root          : ${VCPKG_ROOT}"
+echo "  vcpkg cache         : ${US3_VCPKG_CACHE}"
+echo "  vcpkg downloads     : ${US3_VCPKG_DOWNLOADS}"
+echo "  vcpkg install opts  : ${VCPKG_INSTALL_OPTIONS:-<none>}"
+echo "  Build jobs          : ${BUILD_JOBS}"
 echo ""
 
 if [ "$NON_INTERACTIVE" = false ]; then
@@ -738,6 +681,51 @@ if [ "$NON_INTERACTIVE" = false ]; then
   echo "Grab a coffee if this is your first build!"
 fi
 echo ""
+
+# =============================================================================
+# Qt6 macOS .prl/.pri X11R6 fixup
+# vcpkg's Qt6 port bakes /usr/X11R6/lib into .prl and .pri files on macOS.
+# This path does not exist and causes qwt link failures. Scrub it here so
+# the fix applies whether Qt6 was just installed (--clean) or pre-existing.
+# =============================================================================
+if [ "$PLATFORM" = "macOS" ] && [ "$QT_VARIANT" = "qt6" ]; then
+  _triplet=$(_derive_triplet)
+  _static_triplet="${_triplet%-dynamic}"
+  _needs_fix=false
+
+  while IFS= read -r -d '' _f; do
+    grep -q 'X11R6' "$_f" 2>/dev/null && _needs_fix=true && break
+  done < <(find \
+    "$US3_VCPKG_ROOT/installed/${_triplet}/lib" \
+    "$US3_VCPKG_ROOT/installed/${_static_triplet}/lib" \
+    -maxdepth 1 -name '*.prl' -print0 2>/dev/null)
+
+  if [ "$_needs_fix" = false ]; then
+    for _pri in \
+      "$US3_VCPKG_ROOT/installed/${_triplet}/share/Qt6/mkspecs/modules/qt_lib_gui_private.pri" \
+      "$US3_VCPKG_ROOT/installed/${_static_triplet}/share/Qt6/mkspecs/modules/qt_lib_gui_private.pri"
+    do
+      [ -f "$_pri" ] && grep -q 'X11R6' "$_pri" 2>/dev/null && _needs_fix=true && break
+    done
+  fi
+
+  if [ "$_needs_fix" = true ]; then
+    echo "Fixing Qt6 .prl/.pri files: removing invalid /usr/X11R6/lib path..."
+    while IFS= read -r -d '' _f; do
+      sed -i '' 's| /usr/X11R6/lib||g; s|;/usr/X11R6/lib||g' "$_f"
+    done < <(find \
+      "$US3_VCPKG_ROOT/installed/${_triplet}/lib" \
+      "$US3_VCPKG_ROOT/installed/${_static_triplet}/lib" \
+      -maxdepth 1 -name '*.prl' -print0 2>/dev/null)
+    for _pri in \
+      "$US3_VCPKG_ROOT/installed/${_triplet}/share/Qt6/mkspecs/modules/qt_lib_gui_private.pri" \
+      "$US3_VCPKG_ROOT/installed/${_static_triplet}/share/Qt6/mkspecs/modules/qt_lib_gui_private.pri"
+    do
+      [ -f "$_pri" ] && sed -i '' 's|QMAKE_LIBS_OPENGL = /usr/X11R6/lib|QMAKE_LIBS_OPENGL =|g' "$_pri"
+    done
+    echo "Qt6 X11R6 fixup complete."
+  fi
+fi
 
 # =============================================================================
 # CONFIGURE AND BUILD
@@ -801,7 +789,7 @@ fi
 
 BIN_COUNT=0
 if [ -d "$BUILD_DIR/bin" ]; then
-  BIN_COUNT=$(find "$BUILD_DIR/bin" -maxdepth 1 \( -name '*.app' -o \( -type f -perm /111 \) \) 2>/dev/null | wc -l | tr -d ' ')
+  BIN_COUNT=$(find "$BUILD_DIR/bin" -maxdepth 1 \( -name '*.app' -o \( -type f -perm -111 \) \) 2>/dev/null | wc -l | tr -d ' ' || echo 0)
 fi
 
 echo "=========================================="
