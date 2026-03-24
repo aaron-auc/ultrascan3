@@ -19,8 +19,12 @@
 #   1  base        No feature. Installs top-level deps: openssl, zlib,
 #                  libarchive, eigen3.  Fast (~5 min).
 #   2  qtbase      --x-feature=warm-qt6-stage2  qtbase alone (~25-40 min)
-#   3  qtmods      --x-feature=warm-qt6-stage3  Qt modules + DB libs (~15 min)
-#   4  qwt         --x-feature=warm-qt6-stage4  Qwt + QwtPlot3D (~10 min)
+#   3  qtmulti     --x-feature=warm-qt6-stage3  qtmultimedia + qtdeclarative (~30-60 min)
+#   4  qtmods      --x-feature=warm-qt6-stage4  remaining Qt modules + DB libs (~15 min)
+#   5  qwt         --x-feature=warm-qt6-stage5  Qwt + QwtPlot3D (~10 min)
+#
+# qtmultimedia pulls qtdeclarative as a transitive dep; it is isolated in
+# stage 3 so its large buildtree does not compete with other ports for disk.
 #
 # STAGES (qt5-qwt616)
 # -------------------
@@ -36,7 +40,7 @@
 #   ./scripts/warm-cache.sh --stage <N> [OPTIONS]
 #
 # OPTIONS
-#   --stage N          Required. Stage number (1-4 for qt6; 1-3 for qt5-qwt616).
+#   --stage N          Required. Stage number (1-5 for qt6; 1-3 for qt5-qwt616).
 #   --qt6              Qt6 + Qwt 6.3.0 [default]
 #   --qt5-qwt616       Qt5 + Qwt 6.1.6
 #   --arch x64|arm64   Architecture [default: auto-detect]
@@ -102,13 +106,14 @@ MAX_STAGE=0
 
 case "$QT_VARIANT" in
   qt6)
-    MAX_STAGE=4
+    MAX_STAGE=5
     case "$STAGE" in
       1) FEATURE="" ;;          # base deps only, no feature flag
       2) FEATURE="warm-qt6-stage2" ;;
       3) FEATURE="warm-qt6-stage3" ;;
       4) FEATURE="warm-qt6-stage4" ;;
-      *) echo "ERROR: qt6 supports stages 1-4, got: $STAGE" >&2; exit 1 ;;
+      5) FEATURE="warm-qt6-stage5" ;;
+      *) echo "ERROR: qt6 supports stages 1-5, got: $STAGE" >&2; exit 1 ;;
     esac
     ;;
   qt5-qwt616)
