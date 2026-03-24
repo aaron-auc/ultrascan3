@@ -409,6 +409,9 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   # gperf: in AppStream — same role as on Debian
   # bison: in AppStream — same role as on Debian
   # flex: in AppStream — same role as on Debian
+  # file: provides /usr/bin/file — used by autoconf-generated configure scripts
+  #   to detect file types; absent from the minimal Rocky 8 container image
+  #   and causes configure to fail with "No such file or directory".
   # perl-IPC-Cmd: required by vcpkg's openssl portfile (unix/portfile.cmake uses
   #   IPC::Cmd to invoke subprocesses during the OpenSSL Configure/build steps).
   #   Present on Ubuntu as part of perl-base but NOT installed by default on
@@ -416,13 +419,18 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   # perl-Time-Piece: provides Time::Piece, required by the OpenSSL Configure
   #   script.  A core Perl module but split into a separate package on Rocky/RHEL
   #   8 and not installed by default — its absence causes BUILD_FAILED for openssl.
+  # perl-open: provides the 'open' pragma used by vcpkg port build-aux scripts
+  #   (e.g. expand-selected-hashes in libxcrypt).  Not installed by default in
+  #   the Rocky 8 container — its absence causes "Can't locate open.pm" failures.
   PKGS_CODEGEN=(
     nasm
     gperf
     bison
     flex
+    file
     perl-IPC-Cmd
     perl-Time-Piece
+    perl-open
   )
 
   # --- Python (Sphinx documentation) ----------------------------------------
