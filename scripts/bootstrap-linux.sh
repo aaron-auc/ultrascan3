@@ -426,11 +426,16 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   )
 
   # --- Python (Sphinx documentation) ----------------------------------------
-  # python3 / pip: same role as on Debian
-  # python3-pip: in AppStream on Rocky 8
+  # python3 / python3-pip: same role as on Debian.
+  # python39 / python39-pip: Rocky/RHEL 8 ships Python 3.6 as the system default,
+  #   which is too old for vcpkg's meson port (requires >= 3.7).  python39 installs
+  #   as a parallel alternative; the post-install section below registers it via
+  #   update-alternatives so that `python3` resolves to 3.9 for vcpkg and Sphinx.
   PKGS_PYTHON=(
     python3
     python3-pip
+    python39
+    python39-pip
   )
 
   # --- OpenGL / graphics headers --------------------------------------------
@@ -581,6 +586,7 @@ if [ "$DRY_RUN" = true ]; then
     log "  ${SUDO:+$SUDO }dnf install -y epel-release"
     log "  ${SUDO:+$SUDO }dnf config-manager --set-enabled crb  # or powertools on older Rocky 8"
     log "  ${SUDO:+$SUDO }dnf install -y ${ALL_PKGS[*]}"
+    log "  update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 39"
   fi
   exit 0
 fi
@@ -675,6 +681,20 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   log "Installing packages..."
   ${SUDO:+$SUDO} dnf install -y "${PKGS_TO_INSTALL[@]}"
 
+fi
+
+# =============================================================================
+# POST-INSTALL: RHEL PYTHON 3.9 ALTERNATIVES
+# =============================================================================
+# Rocky/RHEL 8 ships Python 3.6 as the system default, which is too old for
+# vcpkg's meson port (requires >= 3.7).  python39 installs as a parallel
+# alternative at /usr/bin/python3.9.  We register it via update-alternatives
+# with a higher priority than the system 3.6 so that `python3` resolves to 3.9.
+# This is idempotent — re-running with 3.9 already registered is harmless.
+if [ "$DISTRO_FAMILY" = "rhel" ] && [ -x /usr/bin/python3.9 ]; then
+  log "Registering python3.9 as the default python3 via update-alternatives..."
+  ${SUDO:+$SUDO} update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 39
+  log "python3 now resolves to: $(python3 --version 2>&1)"
 fi
 
 # =============================================================================
