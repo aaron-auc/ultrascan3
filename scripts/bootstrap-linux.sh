@@ -413,12 +413,16 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   #   IPC::Cmd to invoke subprocesses during the OpenSSL Configure/build steps).
   #   Present on Ubuntu as part of perl-base but NOT installed by default on
   #   Rocky/RHEL 8 — its absence causes a hard BUILD_FAILED for openssl.
+  # perl-Time-Piece: provides Time::Piece, required by the OpenSSL Configure
+  #   script.  A core Perl module but split into a separate package on Rocky/RHEL
+  #   8 and not installed by default — its absence causes BUILD_FAILED for openssl.
   PKGS_CODEGEN=(
     nasm
     gperf
     bison
     flex
     perl-IPC-Cmd
+    perl-Time-Piece
   )
 
   # --- Python (Sphinx documentation) ----------------------------------------
