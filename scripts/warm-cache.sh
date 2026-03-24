@@ -26,13 +26,7 @@
 # -------------------
 #   1  base        No feature. Same top-level deps as qt6.  Fast (~5 min).
 #   2  qt5mods     --x-feature=warm-qt5-stage2  qt5-base + modules + DB (~20 min)
-#   3  qwt         --x-feature=warm-qt5-stage3  Qwt 6.1.6 + QwtPlot3D (~10 min)
-#
-# STAGES (qt5-qwt630)
-# -------------------
-#   1  base        No feature. Same top-level deps as qt6.  Fast (~5 min).
-#   2  qt5mods     --x-feature=warm-qt5-qwt630-stage2  qt5-base + modules + DB (~20 min)
-#   3  qwt         --x-feature=warm-qt5-qwt630-stage3  Qwt 6.3.0 + QwtPlot3D (~10 min)
+#   3  qwt         --x-feature=warm-qt5-stage3  Qwt + QwtPlot3D (~10 min)
 #
 # vcpkg restores any port already in the binary cache instantly, so each
 # stage only builds what is genuinely new.
@@ -42,10 +36,9 @@
 #   ./scripts/warm-cache.sh --stage <N> [OPTIONS]
 #
 # OPTIONS
-#   --stage N          Required. Stage number (1-4 for qt6; 1-3 for qt5-qwt616/qt5-qwt630).
+#   --stage N          Required. Stage number (1-4 for qt6; 1-3 for qt5-qwt616).
 #   --qt6              Qt6 + Qwt 6.3.0 [default]
 #   --qt5-qwt616       Qt5 + Qwt 6.1.6
-#   --qt5-qwt630       Qt5 + Qwt 6.3.0
 #   --arch x64|arm64   Architecture [default: auto-detect]
 #   --vcpkg-root PATH  vcpkg installation path
 #   --help             Show this message and exit
@@ -74,7 +67,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --qt6)         QT_VARIANT="qt6";        shift ;;
     --qt5-qwt616)  QT_VARIANT="qt5-qwt616"; shift ;;
-    --qt5-qwt630)  QT_VARIANT="qt5-qwt630"; shift ;;
     --arch)
       ARCH="$2"; shift 2
       if [[ "$ARCH" != "x64" && "$ARCH" != "arm64" ]]; then
@@ -126,15 +118,6 @@ case "$QT_VARIANT" in
       2) FEATURE="warm-qt5-stage2" ;;
       3) FEATURE="warm-qt5-stage3" ;;
       *) echo "ERROR: qt5-qwt616 supports stages 1-3, got: $STAGE" >&2; exit 1 ;;
-    esac
-    ;;
-  qt5-qwt630)
-    MAX_STAGE=3
-    case "$STAGE" in
-      1) FEATURE="" ;;
-      2) FEATURE="warm-qt5-qwt630-stage2" ;;
-      3) FEATURE="warm-qt5-qwt630-stage3" ;;
-      *) echo "ERROR: qt5-qwt630 supports stages 1-3, got: $STAGE" >&2; exit 1 ;;
     esac
     ;;
   *)
@@ -226,6 +209,23 @@ elif [ "$PLATFORM" = "Linux" ]; then
 fi
 
 # =============================================================================
+# PYTHON PATH FIX — Rocky/RHEL 8
+# =============================================================================
+# Rocky/RHEL 8 ships Python 3.6 as /usr/bin/python3, which is too old for
+# vcpkg's meson port (requires >= 3.7).  bootstrap-linux.sh installs python39
+# and registers it via update-alternatives, but that only affects the current
+# shell's hash table.  We explicitly prepend the python3.9 shim directory to
+# PATH so that every subprocess spawned by vcpkg (including the meson port
+# config check) sees python3 >= 3.9.
+if [ "$PLATFORM" = "Linux" ] && [ -x /usr/bin/python3.9 ]; then
+  # Create a shim dir in a temp location so we don't pollute /usr/bin
+  PYTHON_SHIM_DIR="$(mktemp -d)"
+  ln -sf /usr/bin/python3.9 "${PYTHON_SHIM_DIR}/python3"
+  export PATH="${PYTHON_SHIM_DIR}:${PATH}"
+  echo "python3 shimmed to: $(python3 --version 2>&1)"
+fi
+
+# =============================================================================
 # VCPKG SETUP (mirrors build.sh)
 # =============================================================================
 if [ -z "$US3_VCPKG_ROOT" ]; then
@@ -285,8 +285,8 @@ VCPKG_ARGS=(
   "--triplet=${TRIPLET}"
   "--host-triplet=${STATIC_TRIPLET}"
   "--overlay-triplets=${OVERLAY_TRIPLETS}"
+  "--x-no-default-features"
 )
-
 if [ -d "$OVERLAY_PORTS" ]; then
   VCPKG_ARGS+=("--overlay-ports=${OVERLAY_PORTS}")
 fi
@@ -310,7 +310,6 @@ echo "=========================================="
 df -h
 echo ""
 
-cd "$SOURCE_DIR"
 "$US3_VCPKG_ROOT/vcpkg" install "${VCPKG_ARGS[@]}"
 
 echo ""
