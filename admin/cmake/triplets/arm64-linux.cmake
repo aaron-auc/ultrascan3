@@ -11,7 +11,12 @@ set(VCPKG_BUILD_TYPE release)
 # host as an Android cross-compile indicator, breaking the xcb feature probe.
 set(VCPKG_OSX_DEPLOYMENT_TARGET "")
 
-# Ensure pkg-config can find xcb/x11 syslib .pc files for Qt's TEST_xcb_syslibs
-# probe. The preset environment block does not propagate into vcpkg's inner
-# port configure subprocesses, so we must set it here in the triplet.
-set(ENV{PKG_CONFIG_PATH} "/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+# Pass Qt feature overrides directly into every port's cmake configure.
+# - FEATURE_xcb_syslibs=ON: skip the pkg-config probe for xcb util libs;
+#   bootstrap-linux.sh installs them and they are present.
+# - FEATURE_x86intrin=OFF: not applicable on arm64 but harmless; keeps
+#   triplets consistent.
+set(VCPKG_CMAKE_CONFIGURE_OPTIONS
+    -DFEATURE_xcb_syslibs=ON
+    -DFEATURE_x86intrin=OFF
+)
