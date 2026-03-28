@@ -259,17 +259,6 @@ if [ "$DISTRO_FAMILY" = "debian" ]; then
   )
 
   # --- X11 / display system headers -----------------------------------------
-  # Qt requires X11/XCB headers to build the xcb platform plugin.
-  # libx11-dev: core X11 (Xlib.h)
-  # libx11-xcb-dev: X11/XCB bridge used by Qt xcb
-  # libxext-dev: X11 extensions
-  # libxrender-dev: XRender extension
-  # libxi-dev: XInput extension
-  # libxrandr-dev: RandR extension
-  # libxcursor-dev: Xcursor
-  # libxinerama-dev: Xinerama extension
-  # libxkbcommon-dev: keyboard handling
-  # libxkbcommon-x11-dev: xkb-x11 integration
   PKGS_X11=(
     libx11-dev
     libx11-xcb-dev
@@ -485,18 +474,25 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
     libICE-devel
   )
 
-  # --- XCB development headers ----------------------------------------------
-  # libxcb-devel: core XCB (xcb/xcb.h) — umbrella package on RHEL that
-  #   covers most of what the individual libxcb-*-dev packages provide on Debian.
-  # xcb-util-devel: xcb-util, xcb-util-image, xcb-util-keysyms, xcb-util-renderutil,
-  #   xcb-util-wm — vcpkg qtbase uses all of these; the -devel metapackage pulls
-  #   them all in on Rocky 8 (CRB).
-  # xcb-util-cursor-devel: xcb-cursor — separate package, also in CRB
-  PKGS_XCB=(
-    libxcb-devel
-    xcb-util-devel
-    xcb-util-cursor-devel
-  )
+# --- XCB development headers ----------------------------------------------
+  # libxcb-devel: core XCB (xcb/xcb.h) — base protocol headers
+  # xcb-util-devel: xcb-util helpers metapackage (CRB)
+  # xcb-util-cursor-devel: xcb-cursor (CRB)
+  # xcb-util-image-devel: xcb-image — required by Qt xcb syslibs test (CRB)
+  # xcb-util-keysyms-devel: xcb-keysyms — required by Qt xcb syslibs test (CRB)
+  # xcb-util-renderutil-devel: xcb-renderutil — required by Qt xcb syslibs test (CRB)
+  # xcb-util-wm-devel: xcb-wm — required by Qt xcb syslibs test (CRB)
+  # Qt 6.10 hard-errors if FEATURE_xcb_syslibs=ON but TEST_xcb_syslibs fails;
+  # all packages above must be present for the test to pass.
+ PKGS_XCB=(
+     libxcb-devel
+     xcb-util-devel
+     xcb-util-cursor-devel
+     xcb-util-image-devel
+     xcb-util-keysyms-devel
+     xcb-util-renderutil-devel
+     xcb-util-wm-devel
+   )
 
   # --- Font and graphics library headers ------------------------------------
   # fontconfig-devel: font configuration — RHEL equivalent of libfontconfig1-dev
