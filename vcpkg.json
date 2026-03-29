@@ -13,6 +13,11 @@
       "name": "gperf",
       "version": "3.1#7",
       "$comment": "Pin to 3.1: Rocky 8 ships autoconf 2.69 which is too old to run autoreconf on gperf 3.3's configure.ac"
+    },
+    {
+      "name": "qtbase",
+      "version": "6.10.1",
+      "$comment": "Pin to 6.10.1: overlay port carries fix-x86intrin-rdseed.patch for GCC 8 on Rocky/RHEL 8"
     }
   ],
   "features": {
