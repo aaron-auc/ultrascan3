@@ -17,6 +17,8 @@ set(VCPKG_OSX_DEPLOYMENT_TARGET "")
 # - FEATURE_x86intrin=OFF: the cannonlake/rdseed config test fails on
 #   GCC 8 (Ubuntu 24.04 default); disable x86 intrinsics rather than error.
 set(VCPKG_CMAKE_CONFIGURE_OPTIONS
-    -DFEATURE_xcb_syslibs=ON
-    -DFEATURE_x86intrin=OFF
+        -DFEATURE_xcb_syslibs=ON
+        -DFEATURE_x86intrin=OFF
+        -DCMAKE_CXX_FLAGS=-march=x86-64
+        -DCMAKE_C_FLAGS=-march=x86-64
 )
