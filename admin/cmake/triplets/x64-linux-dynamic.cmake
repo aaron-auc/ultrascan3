@@ -12,14 +12,10 @@ set(VCPKG_BUILD_TYPE release)
 set(VCPKG_OSX_DEPLOYMENT_TARGET "")
 
 # Pass Qt feature overrides directly into every port's cmake configure.
-# - FEATURE_xcb_syslibs=ON: skip the pkg-config probe for xcb util libs;
-#   bootstrap-linux.sh installs them and they are present.
-# - FEATURE_x86intrin=OFF: the cannonlake/rdseed config test fails on
-#   GCC 8 (Ubuntu 24.04 default); disable x86 intrinsics rather than error.
-set(VCPKG_CXX_FLAGS "-mno-rdseed")
-set(VCPKG_C_FLAGS "-mno-rdseed")
-
+# - FEATURE_xcb_syslibs=ON: bootstrap-linux.sh installs all required xcb-util-*
+#   packages; this tells Qt the syslibs condition is satisfied.
+# Note: the x86intrin/rdseed GCC 8 issue is fixed via the qtbase overlay port
+#   patch (buildsys/vcpkg/overlay-ports/qtbase/fix-x86intrin-rdseed.patch).
 set(VCPKG_CMAKE_CONFIGURE_OPTIONS
-        -DFEATURE_xcb_syslibs=ON
-        -DFEATURE_x86intrin=OFF
+    -DFEATURE_xcb_syslibs=ON
 )

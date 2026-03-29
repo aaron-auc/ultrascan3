@@ -284,7 +284,7 @@ CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 export VCPKG_MAX_CONCURRENCY="$CORES"
 
 OVERLAY_TRIPLETS="${SOURCE_DIR}/admin/cmake/triplets"
-OVERLAY_PORTS="${SOURCE_DIR}/admin/cmake/ports"
+OVERLAY_PORTS="${SOURCE_DIR}/buildsys/vcpkg/overlay-ports"
 
 VCPKG_ARGS=(
   "--triplet=${TRIPLET}"
