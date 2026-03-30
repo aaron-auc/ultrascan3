@@ -1,7 +1,7 @@
 diff --git a/src/tools/syncqt/CMakeLists.txt b/src/tools/syncqt/CMakeLists.txt
 --- a/src/tools/syncqt/CMakeLists.txt
 +++ b/src/tools/syncqt/CMakeLists.txt
-@@ -83,4 +83,9 @@
+@@ -83,4 +83,12 @@
  # Doesn't work if QT_SYNC_HEADERS_AT_CONFIGURE_TIME is TRUE.
  if(NOT QT_INTERNAL_AVOID_OVERRIDING_SYNCQT_CONFIG)
      qt_internal_skip_linking_sanitizer()
@@ -9,5 +9,9 @@ diff --git a/src/tools/syncqt/CMakeLists.txt b/src/tools/syncqt/CMakeLists.txt
 +
 +# GCC 8 does not automatically link std::filesystem; requires explicit -lstdc++fs
 +if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "9")
-+    target_link_libraries(syncqt_build PRIVATE stdc++fs)
++    if(NOT QT_SYNC_HEADERS_AT_CONFIGURE_TIME)
++        target_link_libraries(${target_name} PRIVATE stdc++fs)
++    else()
++        target_link_libraries(syncqt_build PRIVATE stdc++fs)
++    endif()
 +endif()
