@@ -27,10 +27,10 @@ on:
         default: "all"
         type: choice
         options:
-          - all
+          - "all"
           - "ubuntu-x64 (ubuntu-24.04)"
           - "macos-arm (macos-15)"
-          - rocky8
+          - "rocky8-x64"
 
       qt_variant:
         description: "Qt variant"
