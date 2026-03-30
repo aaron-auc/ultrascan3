@@ -1,3 +1,4 @@
+diff --git a/config.tests/x86intrin/main.cpp b/config.tests/x86intrin/main.cpp
 --- a/config.tests/x86intrin/main.cpp
 +++ b/config.tests/x86intrin/main.cpp
 @@ -13,7 +13,7 @@ int test(int argc, char **)
