@@ -1,11 +1,12 @@
 diff --git a/config.tests/x86intrin/main.cpp b/config.tests/x86intrin/main.cpp
 --- a/config.tests/x86intrin/main.cpp
 +++ b/config.tests/x86intrin/main.cpp
-@@ -13,6 +13,6 @@
-     unsigned int randomvalue;
-     _rdrand32_step(&randomvalue);               // RDRAND (IVB)
+@@ -13,7 +13,7 @@
+     unsigned randomvalue;
+     _rdrand32_step(&randomvalue);               // RDRND (IVB)
+ #ifndef __QNXNTO__  // buggy compiler is missing this intrinsic, but we allow it
 -    _rdseed32_step(&randomvalue);               // RDSEED (BDW)
-+    _rdrand32_step(&randomvalue);               // RDSEED (BDW) - use RDRAND fallback for older GCC
-     __m128i a = _mm_setzero_si128();
-     a = _mm_aesenc_si128(a, a);                 // AES (WB)
-     a = _mm_sha1rnds4_epu32(a, a, 0);           // SHA (GLM)
++    _rdrand32_step(&randomvalue);               // RDSEED (BDW) - rdseed unavailable on GCC < 9
+ #endif
+     unsigned mask = _blsmsk_u32(argc);          // BMI (HSW)
+     int clz = _lzcnt_u32(mask);                 // LZCNT (HSW)
