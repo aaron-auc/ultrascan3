@@ -1,13 +1,6 @@
-diff --git a/src/tools/syncqt/CMakeLists.txt b/src/tools/syncqt/CMakeLists.txt
 --- a/src/tools/syncqt/CMakeLists.txt
 +++ b/src/tools/syncqt/CMakeLists.txt
-@@ -35,11 +35,14 @@ if(NOT QT_SYNC_HEADERS_AT_CONFIGURE_TIME)
-     qt_internal_add_tool(${target_name}
-         DEFINES ${compile_definitions}
-         EXCEPTIONS
-         TOOLS_TARGET Core
-         CORE_LIBRARY None
-         INSTALL_DIR "${INSTALL_LIBEXECDIR}"
+@@ -42,6 +42,9 @@
          SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
      )
@@ -17,26 +10,24 @@ diff --git a/src/tools/syncqt/CMakeLists.txt b/src/tools/syncqt/CMakeLists.txt
  else()
      set(config_type "")
      if(NOT QT_INTERNAL_AVOID_OVERRIDING_SYNCQT_CONFIG)
-@@ -55,18 +58,23 @@ else()
+@@ -55,8 +58,9 @@
      if(CMAKE_OSX_SYSROOT)
          set(osx_sysroot "-DCMAKE_OSX_SYSROOT:STRING=${CMAKE_OSX_SYSROOT}")
      endif()
+-    # Note: configure-time tools reserve the original tool name for the imported executable.
+-    # To re-build syncqt use 'syncqt_build' target.
 +    if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "9")
 +        set(gcc8_linker_flags "-DCMAKE_EXE_LINKER_FLAGS=-lstdc++fs")
 +    endif()
      qt_internal_add_configure_time_tool(${target_name}
          DEFINES ${compile_definitions}
          TOOLS_TARGET Core
-         INSTALL_DIRECTORY "${INSTALL_LIBEXECDIR}"
+@@ -64,7 +68,7 @@
          CMAKE_FLAGS
              -DCMAKE_CXX_STANDARD_REQUIRED:BOOL=TRUE
              -DCMAKE_CXX_STANDARD:STRING=17
+-            # std::filesystem API is only available in macOS 10.15+
 +            "${gcc8_linker_flags}"
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.15
              "${osx_architectures}"
              "${osx_sysroot}"
-         SOURCES
-             "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
-         ${config_type}
-     )
- endif()
