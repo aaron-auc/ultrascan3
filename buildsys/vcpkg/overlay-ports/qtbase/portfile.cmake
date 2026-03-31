@@ -39,11 +39,7 @@ if("shared-mime-info" IN_LIST FEATURES)
     list(APPEND ${PORT}_PATCHES use-shared-mime-info.patch)
 endif()
 
-list(APPEND ${PORT}_PATCHES 
-        dont_force_cmakecache_latest.patch
-        fix-x86intrin-rdseed.patch        # GCC 8 (Rocky/RHEL 8): _rdseed32_step unsupported; fall back to _rdrand32_step
-        fix-syncqt-stdfs-gcc8.patch       # GCC 8 (Rocky/RHEL 8): std::filesystem requires explicit -lstdc++fs
-    )
+list(APPEND ${PORT}_PATCHES dont_force_cmakecache_latest.patch)
 
 if(VCPKG_TARGET_IS_WINDOWS AND NOT "doubleconversion" IN_LIST FEATURES)
     message(FATAL_ERROR "${PORT} requires feature doubleconversion on windows!" )

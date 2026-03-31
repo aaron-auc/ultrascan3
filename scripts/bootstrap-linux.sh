@@ -351,6 +351,12 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
 
   # --- Core build toolchain -------------------------------------------------
   # gcc-c++: the g++ equivalent on RHEL/Rocky — vcpkg checks for c++ compiler
+  # gcc-toolset-13: provides GCC 13 on Rocky/RHEL 8 via SCL.
+  #   Rocky 8's default GCC 8.5 is incompatible with Qt 6.10's C++17 noexcept
+  #   correctness checks (static_assert failures in qcomparehelpers.h).
+  #   GCC 13 matches the compiler used on Ubuntu 24.04 and builds Qt 6.10 cleanly.
+  #   Activation: warm-cache.sh and build.sh source the toolset environment
+  #   before invoking vcpkg.
   # ninja-build: from EPEL — the generator used by every CMake preset
   # cmake: RHEL 8 BaseOS ships cmake 3.26+ which satisfies our >= 3.21 requirement
   # git: vcpkg clones itself and its ports from GitHub
@@ -361,6 +367,7 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
     ninja-build
     gcc
     gcc-c++
+    gcc-toolset-13
     make
     git
     pkgconf-pkg-config
@@ -685,6 +692,31 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   log "Installing packages..."
   ${SUDO:+$SUDO} dnf install -y "${PKGS_TO_INSTALL[@]}"
 
+fi
+
+# =============================================================================
+# POST-INSTALL: RHEL GCC TOOLSET 13 ACTIVATION
+# =============================================================================
+# gcc-toolset-13 installs GCC 13 under /opt/rh/gcc-toolset-13/root/usr/bin/.
+# It is NOT on PATH by default — it must be activated via scl or by sourcing
+# the enable script.  We write a profile.d snippet so that CC/CXX are set
+# for all subsequent shells and subprocesses, and also activate it for the
+# current shell session so warm-cache.sh and build.sh pick it up immediately.
+if [ "$DISTRO_FAMILY" = "rhel" ] && [ -f /opt/rh/gcc-toolset-13/enable ]; then
+  GCC13_PROFILE="/etc/profile.d/gcc-toolset-13.sh"
+  if [ ! -f "$GCC13_PROFILE" ]; then
+    log "Writing gcc-toolset-13 activation to ${GCC13_PROFILE}..."
+    ${SUDO:+$SUDO} bash -c "cat > ${GCC13_PROFILE}" <<'EOF'
+# Added by UltraScan3 bootstrap-linux.sh
+# Activates GCC 13 from gcc-toolset-13 for all shells on Rocky/RHEL 8.
+# Rocky 8's default GCC 8.5 cannot build Qt 6.10 (C++17 noexcept failures).
+source /opt/rh/gcc-toolset-13/enable
+EOF
+  fi
+  # Activate for the current shell session
+  # shellcheck disable=SC1091
+  source /opt/rh/gcc-toolset-13/enable
+  log "GCC toolset 13 activated: $(g++ --version | head -1)"
 fi
 
 # =============================================================================

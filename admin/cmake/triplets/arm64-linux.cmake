@@ -12,10 +12,9 @@ set(VCPKG_BUILD_TYPE release)
 set(VCPKG_OSX_DEPLOYMENT_TARGET "")
 
 # Pass Qt feature overrides directly into every port's cmake configure.
-# - FEATURE_xcb_syslibs=ON: skip the pkg-config probe for xcb util libs;
-#   bootstrap-linux.sh installs them and they are present.
-# - FEATURE_x86intrin=OFF: not applicable on arm64 but harmless; keeps
-#   triplets consistent.
+# - FEATURE_xcb_syslibs=ON: bootstrap-linux.sh installs all required xcb-util-*
+#   packages; this tells Qt the syslibs condition is satisfied.
+# - FEATURE_x86intrin=OFF: x86 intrinsics are not applicable on arm64.
 set(VCPKG_CMAKE_CONFIGURE_OPTIONS
     -DFEATURE_xcb_syslibs=ON
     -DFEATURE_x86intrin=OFF

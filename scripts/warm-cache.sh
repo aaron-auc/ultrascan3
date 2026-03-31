@@ -214,6 +214,19 @@ elif [ "$PLATFORM" = "Linux" ]; then
 fi
 
 # =============================================================================
+# GCC TOOLSET 13 ACTIVATION — Rocky/RHEL 8
+# =============================================================================
+# bootstrap-linux.sh installs gcc-toolset-13 and writes a profile.d snippet,
+# but profile.d is not sourced in non-login shells (e.g. GitHub Actions).
+# We source the enable script directly here so that CC/CXX resolve to GCC 13
+# for all vcpkg subprocesses in this warm-cache run.
+if [ "$PLATFORM" = "Linux" ] && [ -f /opt/rh/gcc-toolset-13/enable ]; then
+  # shellcheck disable=SC1091
+  source /opt/rh/gcc-toolset-13/enable
+  echo "GCC toolset 13 activated: $(g++ --version | head -1)"
+fi
+
+# =============================================================================
 # PYTHON PATH FIX — Rocky/RHEL 8
 # =============================================================================
 # Rocky/RHEL 8 ships Python 3.6 as /usr/bin/python3, which is too old for
