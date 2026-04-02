@@ -118,7 +118,16 @@ case "$QT_VARIANT" in
       *) echo "ERROR: qt6 supports stages 1-5, got: $STAGE" >&2; exit 1 ;;
     esac
     ;;
-  qt5-qwt630|qt5-qwt616)
+  qt5-qwt630)
+    MAX_STAGE=3
+    case "$STAGE" in
+      1) FEATURE="" ;;
+      2) FEATURE="warm-qt5-stage2" ;;
+      3) FEATURE="warm-qt5-qwt630-stage3" ;;
+      *) echo "ERROR: $QT_VARIANT supports stages 1-3, got: $STAGE" >&2; exit 1 ;;
+    esac
+    ;;
+  qt5-qwt616)
     MAX_STAGE=3
     case "$STAGE" in
       1) FEATURE="" ;;

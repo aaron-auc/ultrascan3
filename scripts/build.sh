@@ -336,6 +336,29 @@ elif [ "$PLATFORM" = "Linux" ]; then
     bash "$_BOOTSTRAP"
   fi
   echo ""
+
+  # ---------------------------------------------------------------------------
+  # RHEL/Rocky 8: activate GCC 13 for this shell session.
+  # bootstrap-linux.sh writes /etc/profile.d/gcc-toolset-13.sh but profile.d
+  # is not sourced in non-login CI shells — source the enable script directly.
+  if [ -f /opt/rh/gcc-toolset-13/enable ]; then
+    # shellcheck disable=SC1091
+    source /opt/rh/gcc-toolset-13/enable
+    echo "GCC toolset 13 activated: $(g++ --version | head -1)"
+  fi
+
+  # ---------------------------------------------------------------------------
+  # RHEL/Rocky 8: Python 3.6 is the system default but vcpkg's meson port
+  # requires >= 3.7. bootstrap-linux.sh registers python3.9 via
+  # update-alternatives, but that only affects that shell's hash table.
+  # Create a shim in a temp dir so every subprocess (including cmake/vcpkg)
+  # sees python3 >= 3.9 without needing a new login shell.
+  if [ -x /usr/bin/python3.9 ]; then
+    _PYTHON_SHIM_DIR="$(mktemp -d)"
+    ln -sf /usr/bin/python3.9 "${_PYTHON_SHIM_DIR}/python3"
+    export PATH="${_PYTHON_SHIM_DIR}:${PATH}"
+    echo "python3 shimmed to: $(python3 --version 2>&1)"
+  fi
 fi
 
 # =============================================================================

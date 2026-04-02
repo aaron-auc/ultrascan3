@@ -194,10 +194,17 @@
     },
 
     "warm-qt5-stage3": {
-      "description": "Cache warming only: Qwt + QwtPlot3D for Qt5 (stage 3 of 3)",
+      "description": "Cache warming only: Qwt 6.1.6 + QwtPlot3D for Qt5 (stage 3 of 3, qt5-qwt616 variant)",
       "dependencies": [
         "qwt-6-1-6",
         "qwtplot3d-qwt-6-1-6-qt5"
+      ]
+    },
+    "warm-qt5-qwt630-stage3": {
+      "description": "Cache warming only: Qwt 6.3.0 + QwtPlot3D for Qt5 (stage 3 of 3, qt5-qwt630 variant)",
+      "dependencies": [
+        "qwt-6-3-0-qt5",
+        "qwtplot3d-qwt-6-3-0-qt5"
       ]
     }
   }
