@@ -342,12 +342,39 @@ echo "  concurrency    : $CORES"
 echo ""
 
 # =============================================================================
+# RHEL/Rocky: ensure /usr/bin is on PATH after gcc-toolset activation
+# gcc-toolset-13's enable script prepends its own bin dir but may shadow
+# /usr/bin on minimal containers. Qt5 configure requires 'make' on PATH.
+# =============================================================================
+if [ "$PLATFORM" = "Linux" ] && [ -f /etc/os-release ]; then
+  _OS_ID=$(. /etc/os-release && echo "${ID:-}")
+  case "$_OS_ID" in
+    rhel|centos|rocky|almalinux)
+      export PATH="/usr/bin:/usr/sbin:${PATH}"
+      echo "Rocky/RHEL PATH hardened: make=$(command -v make 2>/dev/null || echo NOT FOUND)"
+      ;;
+  esac
+fi
+
+# =============================================================================
 # INSTALL
 # =============================================================================
 echo "=========================================="
 echo "Stage ${STAGE}/${MAX_STAGE}: vcpkg install"
 echo "=========================================="
 df -h
+echo ""
+
+# Tool PATH check — qt5-base configure requires make or gmake
+echo "Tool PATH check:"
+for t in make gmake cmake ninja g++ git python3; do
+  if command -v "$t" &>/dev/null; then
+    echo "  $t: $(command -v $t)"
+  else
+    echo "  $t: NOT FOUND"
+  fi
+done
+echo "PATH=$PATH"
 echo ""
 
 "$US3_VCPKG_ROOT/vcpkg" install "${VCPKG_ARGS[@]}"
