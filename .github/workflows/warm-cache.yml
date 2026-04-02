@@ -39,7 +39,6 @@ on:
         default: qt6
         options:
           - qt6
-          - qt5-qwt616
           - qt5-qwt630
 
 permissions:

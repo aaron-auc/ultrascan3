@@ -2,7 +2,7 @@ name: UltraScan3 On-Demand Build
 
 # Run title shown in the Actions list — no need to open the run to know what it built.
 # Example: "On-Demand [feature/hpc-fix] APP qt6 by @ehb54"
-run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.platforms }} ${{ inputs.profile }} ${{ inputs.qt_variant }} by @${{ github.actor }}"
+run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.platforms }} ${{ inputs.profile }} ${{ inputs.qt_version }} by @${{ github.actor }}"
 
 on:
   workflow_dispatch:
@@ -22,8 +22,8 @@ on:
       platforms:
         # Choose a single platform, a named group, or "all".
         # "macos only"  = macos-15 + macos-15-intel
-        # "linux only"  = ubuntu-24.04 + ubuntu-24.04-arm
-        # "all"         = every platform above plus windows-2022 and rocky8
+        # "linux only"  = ubuntu-24.04 + ubuntu-24.04-arm + rocky8-x64
+        # "all"         = every platform above plus windows-2022
         description: "Platforms to build"
         required: true
         default: "macos-arm (macos-15)"
@@ -35,7 +35,7 @@ on:
           - "ubuntu-x64 (ubuntu-24.04)"
           - "ubuntu-arm (ubuntu-24.04-arm)"
           - "windows (windows-2022)"
-          - "rocky8"
+          - "rocky8-x64 (rockylinux:8)"
           - "macos only"
           - "linux only"
 
@@ -52,24 +52,23 @@ on:
           - TEST
           - HPC
 
-      qt_variant:
-        # qt6          — Qt 6 + Qwt 6.3.0  (default on macOS and Windows)
-        # qt5-qwt616   — Qt 5 + Qwt 6.1.6  (default on Linux)
-        # qt5-qwt630   — Qt 5 + Qwt 6.3.0
-        description: "Qt variant (ignored for rocky8 — always qt5-qwt616)"
+      qt_version:
+        # qt6 — Qt 6 + Qwt 6.3.0
+        # qt5 — Qt 5 + Qwt 6.3.0
+        # Rocky Linux 8 always uses qt5; this input is ignored for that platform.
+        description: "Qt version (rocky8-x64 always uses qt5)"
         required: true
         default: "qt6"
         type: choice
         options:
           - qt6
-          - qt5-qwt616
-          - qt5-qwt630
+          - qt5
 
       clean_tier:
-        # 0 — incremental: only rebuild changed files (fastest, default)
-        # 1 — --rebuild:   wipe CMake build dir, keep vcpkg cache
-        # 2 — --clean:     wipe build dir + reinstall vcpkg packages for triplet
-        # 3 — --clean --purge-cache: full recompile from source (slowest)
+        # incremental      — only rebuild changed files (fastest, default)
+        # rebuild          — wipe CMake build dir, keep vcpkg cache
+        # clean            — wipe build dir + reinstall vcpkg packages for triplet
+        # clean-purge-cache — full recompile from source (slowest)
         description: "Clean tier: incremental=reuse build dir, rebuild=wipe build dir, clean=reinstall vcpkg, clean-purge-cache=full source rebuild"
         required: true
         default: "incremental"
@@ -97,7 +96,7 @@ jobs:
 
   # -------------------------------------------------------------------------
   # macOS ARM (macos-15, Apple Silicon)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-macos-15
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-macos-15
   # -------------------------------------------------------------------------
   build-macos-arm:
     name: "macOS ARM (macos-15)"
@@ -109,15 +108,15 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  macos-15
-      qt_variant:              ${{ inputs.qt_variant }}
+      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
   # -------------------------------------------------------------------------
   # macOS Intel (macos-15-intel, x86-64)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-macos-15-intel
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-macos-15-intel
   # -------------------------------------------------------------------------
   build-macos-intel:
     name: "macOS Intel (macos-15-intel)"
@@ -129,15 +128,15 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  macos-15-intel
-      qt_variant:              ${{ inputs.qt_variant }}
+      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
   # -------------------------------------------------------------------------
   # Linux x64 (ubuntu-24.04)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-ubuntu-24.04
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-ubuntu-24.04
   # -------------------------------------------------------------------------
   build-ubuntu-x64:
     name: "Linux x64 (ubuntu-24.04)"
@@ -149,15 +148,15 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04
-      qt_variant:              ${{ inputs.qt_variant }}
+      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
   # -------------------------------------------------------------------------
   # Linux ARM64 (ubuntu-24.04-arm)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-ubuntu-24.04-arm
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-ubuntu-24.04-arm
   # -------------------------------------------------------------------------
   build-ubuntu-arm:
     name: "Linux ARM64 (ubuntu-24.04-arm)"
@@ -169,15 +168,15 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04-arm
-      qt_variant:              ${{ inputs.qt_variant }}
+      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
   # -------------------------------------------------------------------------
   # Windows x64 (windows-2022)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_variant>-windows-2022
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-windows-2022
   # -------------------------------------------------------------------------
   build-windows:
     name: "Windows x64 (windows-2022)"
@@ -188,32 +187,32 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  windows-2022
-      qt_variant:              ${{ inputs.qt_variant }}
+      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_variant) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
 
   # -------------------------------------------------------------------------
   # Rocky Linux 8 x64 (rockylinux:8 container on ubuntu-24.04)
-  # Qt5+Qwt6.1.6 only — qt_variant input is ignored for this platform.
+  # Always qt5-qwt630 — qt_version input is ignored for this platform.
   # cache_os_label isolates Rocky 8 binaries from Ubuntu binaries in the
   # vcpkg cache (different glibc version).
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-qt5-qwt616-ubuntu-24.04
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-qt5-rocky8-x64
   # -------------------------------------------------------------------------
   build-rocky8:
     name: "Rocky Linux 8 x64"
     if: |
       inputs.platforms == 'all' ||
-      inputs.platforms == 'rocky8' ||
+      inputs.platforms == 'rocky8-x64 (rockylinux:8)' ||
       inputs.platforms == 'linux only'
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04
       cache_os_label:          rocky8
-      qt_variant:              qt5-qwt616
+      qt_variant:              qt5-qwt630
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-qt5-qwt616', github.run_number, inputs.ref, inputs.profile) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-qt5', github.run_number, inputs.ref, inputs.profile) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
