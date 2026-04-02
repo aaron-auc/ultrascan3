@@ -253,16 +253,19 @@ fi
 # =============================================================================
 # Rocky/RHEL 8 ships Python 3.6 as /usr/bin/python3, which is too old for
 # vcpkg's meson port (requires >= 3.7).  bootstrap-linux.sh installs python39
-# and registers it via update-alternatives, but that only affects the current
-# shell's hash table.  We explicitly prepend the python3.9 shim directory to
-# PATH so that every subprocess spawned by vcpkg (including the meson port
-# config check) sees python3 >= 3.9.
+# and registers it via update-alternatives, but vcpkg's meson portfile checks
+# the Python version via the absolute path /usr/bin/python3, bypassing PATH.
+# We force /usr/bin/python3 to point to python3.9 directly so both PATH-based
+# and absolute-path lookups see the correct version.
 if [ "$PLATFORM" = "Linux" ] && [ -x /usr/bin/python3.9 ]; then
-  # Create a shim dir in a temp location so we don't pollute /usr/bin
+  # Force /usr/bin/python3 → python3.9 via update-alternatives (highest priority)
+  update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 100 2>/dev/null || true
+  update-alternatives --set python3 /usr/bin/python3.9 2>/dev/null || true
+  echo "python3 forced to: $(python3 --version 2>&1) at $(command -v python3)"
+  # Also shim PATH for any tools that resolve via PATH rather than /usr/bin directly
   PYTHON_SHIM_DIR="$(mktemp -d)"
   ln -sf /usr/bin/python3.9 "${PYTHON_SHIM_DIR}/python3"
   export PATH="${PYTHON_SHIM_DIR}:${PATH}"
-  echo "python3 shimmed to: $(python3 --version 2>&1)"
 fi
 
 # =============================================================================
