@@ -195,10 +195,9 @@ jobs:
 
   # -------------------------------------------------------------------------
   # Rocky Linux 8 x64 (rockylinux:8 container on ubuntu-24.04)
-  # Always qt5-qwt630 — qt_version input is ignored for this platform.
   # cache_os_label isolates Rocky 8 binaries from Ubuntu binaries in the
   # vcpkg cache (different glibc version).
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-qt5-rocky8-x64
+  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-rocky8-x64
   # -------------------------------------------------------------------------
   build-rocky8:
     name: "Rocky Linux 8 x64"
@@ -211,8 +210,8 @@ jobs:
       ref:                     ${{ inputs.ref }}
       runner:                  ubuntu-24.04
       cache_os_label:          rocky8
-      qt_variant:              qt5-qwt630
+      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
       profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-qt5', github.run_number, inputs.ref, inputs.profile) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}

@@ -9,7 +9,7 @@ name: Warm vcpkg Cache
 # Once all stages complete, the full build workflow gets a cache hit and skips
 # vcpkg entirely, leaving enough disk headroom for the UltraScan3 compile.
 
-run-name: "Warm Cache [${{ inputs.ref }}] ${{ inputs.platforms }} ${{ inputs.qt_variant }} by @${{ github.actor }}"
+run-name: "Warm Cache [${{ inputs.ref }}] ${{ inputs.platforms }} ${{ inputs.qt_version }} by @${{ github.actor }}"
 
 on:
   workflow_dispatch:
@@ -32,14 +32,14 @@ on:
           - "macos-arm (macos-15)"
           - "rocky8-x64"
 
-      qt_variant:
-        description: "Qt variant"
+      qt_version:
+        description: "Qt version"
         required: false
         type: choice
         default: qt6
         options:
           - qt6
-          - qt5-qwt630
+          - qt5
 
 permissions:
   contents: read
@@ -50,5 +50,5 @@ jobs:
     with:
       ref:        ${{ inputs.ref }}
       platforms:  ${{ inputs.platforms }}
-      qt_variant: ${{ inputs.qt_variant }}
+      qt_variant: ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
     secrets: inherit
