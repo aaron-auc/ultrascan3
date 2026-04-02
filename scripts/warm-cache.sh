@@ -225,7 +225,7 @@ elif [ "$PLATFORM" = "Linux" ]; then
 fi
 
 # =============================================================================
-# GCC TOOLSET 13 ACTIVATION — Rocky/RHEL 8
+# GCC TOOLSET 13 / COMPILER EXPORT — Rocky/RHEL 8
 # =============================================================================
 # bootstrap-linux.sh installs gcc-toolset-13 and writes a profile.d snippet,
 # but profile.d is not sourced in non-login shells (e.g. GitHub Actions).
@@ -235,6 +235,17 @@ if [ "$PLATFORM" = "Linux" ] && [ -f /opt/rh/gcc-toolset-13/enable ]; then
   # shellcheck disable=SC1091
   source /opt/rh/gcc-toolset-13/enable
   echo "GCC toolset 13 activated: $(g++ --version | head -1)"
+  # Export CC/CXX explicitly so vcpkg's inner CMake invocations and Qt5's
+  # qmake configure script both pick up GCC 13 rather than re-detecting
+  # the compiler from PATH (which can race with system /usr/bin/cc).
+  GCC13_BIN=/opt/rh/gcc-toolset-13/root/usr/bin
+  export CC="${GCC13_BIN}/gcc"
+  export CXX="${GCC13_BIN}/g++"
+  export AR="${GCC13_BIN}/ar"
+  export NM="${GCC13_BIN}/nm"
+  export RANLIB="${GCC13_BIN}/ranlib"
+  export STRIP="${GCC13_BIN}/strip"
+  echo "CC=${CC}  CXX=${CXX}"
 fi
 
 # =============================================================================
