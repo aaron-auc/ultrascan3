@@ -26,8 +26,8 @@
 # qtmultimedia pulls qtdeclarative as a transitive dep; it is isolated in
 # stage 3 so its large buildtree does not compete with other ports for disk.
 #
-# STAGES (qt5-qwt616)
-# -------------------
+# STAGES (qt5-qwt616 | qt5-qwt630)
+# ----------------------------------
 #   1  base        No feature. Same top-level deps as qt6.  Fast (~5 min).
 #   2  qt5mods     --x-feature=warm-qt5-stage2  qt5-base + modules + DB (~20 min)
 #   3  qwt         --x-feature=warm-qt5-stage3  Qwt + QwtPlot3D (~10 min)
@@ -40,8 +40,9 @@
 #   ./scripts/warm-cache.sh --stage <N> [OPTIONS]
 #
 # OPTIONS
-#   --stage N          Required. Stage number (1-5 for qt6; 1-3 for qt5-qwt616).
+#   --stage N          Required. Stage number (1-5 for qt6; 1-3 for qt5-qwt616/qt5-qwt630).
 #   --qt6              Qt6 + Qwt 6.3.0 [default]
+#   --qt5-qwt630       Qt5 + Qwt 6.3.0
 #   --qt5-qwt616       Qt5 + Qwt 6.1.6
 #   --arch x64|arm64   Architecture [default: auto-detect]
 #   --vcpkg-root PATH  vcpkg installation path
@@ -70,6 +71,7 @@ while [[ $# -gt 0 ]]; do
       STAGE="$2"; shift 2
       ;;
     --qt6)         QT_VARIANT="qt6";        shift ;;
+    --qt5-qwt630)  QT_VARIANT="qt5-qwt630"; shift ;;
     --qt5-qwt616)  QT_VARIANT="qt5-qwt616"; shift ;;
     --arch)
       ARCH="$2"; shift 2
@@ -116,13 +118,13 @@ case "$QT_VARIANT" in
       *) echo "ERROR: qt6 supports stages 1-5, got: $STAGE" >&2; exit 1 ;;
     esac
     ;;
-  qt5-qwt616)
+  qt5-qwt630|qt5-qwt616)
     MAX_STAGE=3
     case "$STAGE" in
       1) FEATURE="" ;;
       2) FEATURE="warm-qt5-stage2" ;;
       3) FEATURE="warm-qt5-stage3" ;;
-      *) echo "ERROR: qt5-qwt616 supports stages 1-3, got: $STAGE" >&2; exit 1 ;;
+      *) echo "ERROR: $QT_VARIANT supports stages 1-3, got: $STAGE" >&2; exit 1 ;;
     esac
     ;;
   *)
