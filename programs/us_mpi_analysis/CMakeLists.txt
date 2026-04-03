@@ -30,18 +30,17 @@ target_link_libraries(us_mpi_analysis
         MPI::MPI_CXX
 )
 
-# Qt6 + LTO: qt_resourceFeatureZstd is pulled in from the resource initialiser
-# inside libus3_resources.a (via us_program_common -> WHOLE_ARCHIVE). With
-# --as-needed the linker drops libzstd unless it appears AFTER the archive
-# that references the symbol. Add it explicitly here, after us_program_common,
+# Qt6 + LTO: qt_resourceFeatureZstd is referenced from the resource initialiser
+# inside libus3_resources.a (pulled in via us_program_common WHOLE_ARCHIVE).
+# With --as-needed the linker drops libzstd if it appears before the archive
+# establishes the demand. Link it explicitly here, after us_program_common,
 # so the demand is already visible when the linker processes libzstd.
+# Use -lzstd directly: libzstd is always present in the vcpkg Qt6 tree and
+# its path is already on the linker's -L / RPATH via Qt6::Core. Bypassing
+# find_package avoids stale CMakeCache.txt entries in CI binary-cache restores
+# where a prior run cached zstd_FOUND=FALSE before zstd was installed.
 if(USE_QT6)
-    find_package(zstd CONFIG QUIET)
-    if(TARGET zstd::libzstd_shared)
-        target_link_libraries(us_mpi_analysis PRIVATE zstd::libzstd_shared)
-    elseif(TARGET zstd::libzstd_static)
-        target_link_libraries(us_mpi_analysis PRIVATE zstd::libzstd_static)
-    endif()
+    target_link_libraries(us_mpi_analysis PRIVATE -lzstd)
 endif()
 
 target_include_directories(us_mpi_analysis
