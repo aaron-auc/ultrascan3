@@ -30,6 +30,20 @@ target_link_libraries(us_mpi_analysis
         MPI::MPI_CXX
 )
 
+# Qt6 + LTO: qt_resourceFeatureZstd is pulled in from the resource initialiser
+# inside libus3_resources.a (via us_program_common -> WHOLE_ARCHIVE). With
+# --as-needed the linker drops libzstd unless it appears AFTER the archive
+# that references the symbol. Add it explicitly here, after us_program_common,
+# so the demand is already visible when the linker processes libzstd.
+if(USE_QT6)
+    find_package(zstd CONFIG QUIET)
+    if(TARGET zstd::libzstd_shared)
+        target_link_libraries(us_mpi_analysis PRIVATE zstd::libzstd_shared)
+    elseif(TARGET zstd::libzstd_static)
+        target_link_libraries(us_mpi_analysis PRIVATE zstd::libzstd_static)
+    endif()
+endif()
+
 target_include_directories(us_mpi_analysis
     PRIVATE
         ${src_dir}

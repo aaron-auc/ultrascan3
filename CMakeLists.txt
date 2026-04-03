@@ -517,28 +517,10 @@ add_library(us3_resources STATIC "${US3_QRC_XML}")
 set_target_properties(us3_resources PROPERTIES AUTOMOC OFF)
 add_dependencies(us3_resources us3_validate_qrc)
 
-# Qt6 builds with LTO expose qt_resourceFeatureZstd from the resource
-# initialiser. libzstd must be on the link line of every target that
-# links us3_resources (including us_mpi_analysis via us_program_common).
-# Link it PUBLIC so it propagates transitively to all consumers.
-if(USE_QT6)
-    find_package(zstd CONFIG QUIET)
-    if(TARGET zstd::libzstd_shared)
-        set(_US3_ZSTD_TARGET zstd::libzstd_shared)
-    elseif(TARGET zstd::libzstd_static)
-        set(_US3_ZSTD_TARGET zstd::libzstd_static)
-    else()
-        set(_US3_ZSTD_TARGET "")
-    endif()
-endif()
-
 if(US3_PROFILE STREQUAL "HPC")
     target_link_libraries(us3_resources PRIVATE Qt::Core)
 else()
     target_link_libraries(us3_resources PRIVATE Qt::Core Qt::Gui)
-endif()
-if(USE_QT6 AND _US3_ZSTD_TARGET)
-    target_link_libraries(us3_resources PUBLIC ${_US3_ZSTD_TARGET})
 endif()
 
 add_library(UltraScan3::Resources ALIAS us3_resources)
