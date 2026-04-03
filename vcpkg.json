@@ -121,7 +121,8 @@
             "sql",
             "concurrent",
             "dnslookup",
-            "openssl"
+            "openssl",
+            "zstd"
           ]
         }
       ]
