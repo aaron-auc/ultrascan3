@@ -359,6 +359,24 @@ elif [ "$PLATFORM" = "Linux" ]; then
   fi
 
   # ---------------------------------------------------------------------------
+  # RHEL/Rocky 8: add OpenMPI to PATH for HPC builds.
+  # openmpi-devel installs mpicxx to /usr/lib64/openmpi/bin/ which is not
+  # on PATH by default. profile.d is not sourced in non-login CI shells.
+  # PKG_CONFIG_PATH must include the OpenMPI pkgconfig dir so that CMake's
+  # FindMPI can resolve the 'mpi-cxx' pkg-config module; without it,
+  # find_package(MPI REQUIRED CXX) fails even when mpicxx is on PATH.
+  # MPI_CXX_COMPILER is exported as a hint so FindMPI uses the wrapper
+  # directly rather than relying solely on pkg-config.
+  if [ "$PROFILE" = "HPC" ] && [ -d /usr/lib64/openmpi/bin ]; then
+    export PATH="/usr/lib64/openmpi/bin:${PATH}"
+    export LD_LIBRARY_PATH="/usr/lib64/openmpi/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export PKG_CONFIG_PATH="/usr/lib64/openmpi/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+    export MPI_CXX_COMPILER="/usr/lib64/openmpi/bin/mpicxx"
+    echo "OpenMPI PATH added: $(command -v mpicxx 2>/dev/null || echo NOT FOUND)"
+    echo "PKG_CONFIG_PATH: ${PKG_CONFIG_PATH}"
+  fi
+
+  # ---------------------------------------------------------------------------
   # RHEL/Rocky 8: Python 3.6 is the system default but vcpkg's meson port
   # requires >= 3.7. bootstrap-linux.sh registers python3.9 via
   # update-alternatives, but that only affects that shell's hash table.

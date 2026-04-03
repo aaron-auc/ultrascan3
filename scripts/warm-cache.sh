@@ -345,18 +345,15 @@ echo "  concurrency    : $CORES"
 echo ""
 
 # =============================================================================
-# RHEL/Rocky: ensure /usr/bin is on PATH after gcc-toolset activation
-# gcc-toolset-13's enable script prepends its own bin dir but may shadow
-# /usr/bin on minimal containers. Qt5 configure requires 'make' on PATH.
+# LINUX: ensure /usr/bin is on PATH before vcpkg runs
+# vcpkg spawns subprocesses (e.g. Qt5 configure) that check for 'make'
+# via PATH. On minimal containers or runners with modified environments
+# /usr/bin may not be reliably first. Prepend it explicitly.
+# On Rocky/RHEL this also counteracts gcc-toolset PATH prepending.
 # =============================================================================
-if [ "$PLATFORM" = "Linux" ] && [ -f /etc/os-release ]; then
-  _OS_ID=$(. /etc/os-release && echo "${ID:-}")
-  case "$_OS_ID" in
-    rhel|centos|rocky|almalinux)
-      export PATH="/usr/bin:/usr/sbin:${PATH}"
-      echo "Rocky/RHEL PATH hardened: make=$(command -v make 2>/dev/null || echo NOT FOUND)"
-      ;;
-  esac
+if [ "$PLATFORM" = "Linux" ]; then
+  export PATH="/usr/bin:/usr/sbin:${PATH}"
+  echo "Linux PATH hardened: make=$(command -v make 2>/dev/null || echo NOT FOUND)"
 fi
 
 # =============================================================================
