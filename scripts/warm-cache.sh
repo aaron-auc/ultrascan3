@@ -115,7 +115,8 @@ case "$QT_VARIANT" in
       3) FEATURE="warm-qt6-stage3" ;;
       4) FEATURE="warm-qt6-stage4" ;;
       5) FEATURE="warm-qt6-stage5" ;;
-      *) echo "ERROR: qt6 supports stages 1-5, got: $STAGE" >&2; exit 1 ;;
+      hpc) FEATURE="warm-qt6-hpc"; MAX_STAGE=1 ;;
+      *) echo "ERROR: qt6 supports stages 1-5 or hpc, got: $STAGE" >&2; exit 1 ;;
     esac
     ;;
   qt5-qwt630)

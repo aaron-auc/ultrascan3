@@ -128,6 +128,24 @@
       ]
     },
 
+    "warm-qt6-hpc": {
+      "description": "Cache warming only: qtbase with HPC feature set (stage for rocky8 HPC builds)",
+      "dependencies": [
+        {
+          "name": "qtbase",
+          "default-features": false,
+          "features": [
+            "network",
+            "sql",
+            "concurrent",
+            "dnslookup",
+            "openssl",
+            "zstd"
+          ]
+        }
+      ]
+    },
+
     "warm-qt6-stage2": {
       "description": "Cache warming only: qtbase alone (stage 2 of 5)",
       "dependencies": [
