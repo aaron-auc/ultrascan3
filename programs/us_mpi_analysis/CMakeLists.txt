@@ -30,27 +30,6 @@ target_link_libraries(us_mpi_analysis
         MPI::MPI_CXX
 )
 
-# Qt6 + LTO: qt_resourceFeatureZstd is referenced from the resource initialiser
-# inside libus3_resources.a (pulled in via us_program_common WHOLE_ARCHIVE).
-# With --as-needed the linker drops libzstd if it appears before the archive
-# establishes the demand. Link it explicitly here, after us_program_common.
-# The HPC Qt6 subset (Core/Network/Sql/Xml) does not pull in libzstd
-# transitively, so we locate it by finding the actual .so next to Qt6::Core.
-if(USE_QT6)
-    get_target_property(_qt6core_loc Qt6::Core LOCATION)
-    get_filename_component(_qt6_lib_dir "${_qt6core_loc}" DIRECTORY)
-    find_library(_zstd_lib
-        NAMES zstd
-        HINTS "${_qt6_lib_dir}"
-        NO_DEFAULT_PATH
-    )
-    if(_zstd_lib)
-        target_link_libraries(us_mpi_analysis PRIVATE "${_zstd_lib}")
-    else()
-        message(FATAL_ERROR "[us_mpi_analysis] libzstd not found alongside Qt6::Core in ${_qt6_lib_dir}")
-    endif()
-endif()
-
 target_include_directories(us_mpi_analysis
     PRIVATE
         ${src_dir}
