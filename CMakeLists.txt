@@ -525,6 +525,22 @@ else()
     target_link_libraries(us3_resources PRIVATE Qt::Core Qt::Gui)
 endif()
 
+# Qt6 rcc unconditionally emits calls to qt_resourceFeatureZstd in QRC
+# initialiser code. libzstd must be linked by every target that includes
+# us3_resources. Derive the absolute path from Qt6::Core's location so
+# there is no dependency on -L search paths or find_package cache state.
+if(USE_QT6)
+    get_target_property(_qt6core_loc Qt6::Core LOCATION)
+    get_filename_component(_qt6core_dir "${_qt6core_loc}" DIRECTORY)
+    find_library(_us3_zstd_lib NAMES zstd HINTS "${_qt6core_dir}" NO_DEFAULT_PATH)
+    if(_us3_zstd_lib)
+        target_link_libraries(us3_resources PUBLIC "${_us3_zstd_lib}")
+        message(STATUS "[us3_resources] Linking zstd: ${_us3_zstd_lib}")
+    else()
+        message(FATAL_ERROR "[us3_resources] libzstd not found in ${_qt6core_dir} -- required by Qt6 QRC")
+    endif()
+endif()
+
 add_library(UltraScan3::Resources ALIAS us3_resources)
 
 # Create symbolic link from source etc to build etc
