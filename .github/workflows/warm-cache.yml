@@ -4,8 +4,8 @@ name: Warm vcpkg Cache
 # Run this manually before a nightly build, or after vcpkg.json / overlay port
 # changes, on any platform that has been hitting disk-space failures.
 #
-# The warm workflow installs vcpkg dependencies in four sequential stages,
-# saving the binary cache after each stage so partial progress is never lost.
+# The warm workflow installs vcpkg dependencies in staged jobs, saving the
+# binary cache after each stage so partial progress is never lost.
 # Once all stages complete, the full build workflow gets a cache hit and skips
 # vcpkg entirely, leaving enough disk headroom for the UltraScan3 compile.
 
@@ -30,6 +30,7 @@ on:
           - "all"
           - "ubuntu-x64 (ubuntu-24.04)"
           - "macos-arm (macos-15)"
+          - "macos-intel (macos-15-intel)"
           - "rocky8-x64"
 
 permissions:

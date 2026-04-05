@@ -1,4 +1,5 @@
-[![Nightly Build](https://github.com/aaron-auc/ultrascan3/actions/workflows/nightly-builds.yml/badge.svg?branch=main)](https://github.com/ehb54/ultrascan3/actions/workflows/nightly-builds.yml)
+[![Nightly Build](https://github.com/ehb54/ultrascan3/actions/workflows/nightly-builds.yml/badge.svg?branch=main)](https://github.com/ehb54/ultrascan3/actions/workflows/nightly-builds.yml)
+[![Release](https://github.com/ehb54/ultrascan3/actions/workflows/release.yml/badge.svg)](https://github.com/ehb54/ultrascan3/actions/workflows/release.yml)
 [![CodeQL](https://github.com/ehb54/ultrascan3/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/ehb54/ultrascan3/actions/workflows/codeql-analysis.yml)
 
 This is the home of the UltraScan GUI software source code.

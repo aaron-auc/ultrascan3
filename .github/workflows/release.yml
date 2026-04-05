@@ -1,14 +1,11 @@
-name: UltraScan3 Nightly Build
+name: UltraScan3 Release
 
-run-name: >-
-  ${{ github.event_name == 'schedule'
-    && format('Nightly [main] {0}', github.run_started_at)
-    || format('Nightly [manual] by @{0}', github.actor) }}
+run-name: "Release ${{ github.ref_name }} by @${{ github.actor }}"
 
 on:
-  schedule:
-    - cron: "0 4 * * *"
-  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -16,51 +13,21 @@ permissions:
 jobs:
 
   # =========================================================================
-  # PHASE 0 — CHANGE DETECTION
-  # Scheduled runs skip everything if no commits landed on main in 24h.
-  # workflow_dispatch always proceeds.
-  # =========================================================================
-
-  check-changes:
-    name: "Check for changes in last 24h"
-    runs-on: ubuntu-24.04
-    outputs:
-      has_changes: ${{ steps.detect.outputs.has_changes }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Detect commits in last 24 hours
-        id: detect
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          COUNT=$(git log --oneline --since="24 hours ago" origin/main | wc -l | tr -d ' ')
-          echo "Commits in last 24h: $COUNT"
-          echo "has_changes=$( [[ $COUNT -gt 0 ]] && echo true || echo false )" >> "$GITHUB_OUTPUT"
-
-  # =========================================================================
   # PHASE 1 — CACHE PROBES
-  # Exact-key lookup (no download) for each platform/profile.
-  # A miss triggers Phase 2 warm for all platforms.
-  # Key: vcpkg-<os>-qt6-<profile>-<hash(vcpkg.json, admin/cmake/**, CMakeLists.txt)>
+  # Exact-key lookup for each platform/profile. A miss triggers Phase 2.
+  # Tags are always cut from main so ref is github.ref (the tag), which
+  # resolves to the tagged main commit.
   # =========================================================================
 
   probe-ubuntu-app:
     name: "Probe: ubuntu-24.04 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 1
       - id: probe
         uses: actions/cache/restore@v5
@@ -73,15 +40,13 @@ jobs:
 
   probe-ubuntu-hpc:
     name: "Probe: ubuntu-24.04 / qt6 / HPC"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 1
       - id: probe
         uses: actions/cache/restore@v5
@@ -94,15 +59,13 @@ jobs:
 
   probe-macos-arm:
     name: "Probe: macos-15 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: macos-15
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 1
       - id: probe
         uses: actions/cache/restore@v5
@@ -115,15 +78,13 @@ jobs:
 
   probe-macos-intel:
     name: "Probe: macos-15-intel / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: macos-15-intel
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 1
       - id: probe
         uses: actions/cache/restore@v5
@@ -136,15 +97,13 @@ jobs:
 
   probe-rocky8-app:
     name: "Probe: rocky8 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 1
       - id: probe
         uses: actions/cache/restore@v5
@@ -157,15 +116,13 @@ jobs:
 
   probe-rocky8-hpc:
     name: "Probe: rocky8 / qt6 / HPC"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 1
       - id: probe
         uses: actions/cache/restore@v5
@@ -178,8 +135,6 @@ jobs:
 
   # =========================================================================
   # PHASE 2 — CONDITIONAL WARM
-  # Fires if any probe missed. Idempotent — platforms with a hot cache
-  # short-circuit at stage 1. Windows fits in a single run; no warm needed.
   # =========================================================================
 
   warm-if-needed:
@@ -200,16 +155,13 @@ jobs:
       needs.probe-rocky8-hpc.outputs.cache-hit   != 'true'
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
     with:
-      ref:        main
+      ref:        ${{ github.ref }}
       platforms:  all
       qt_variant: qt6
     secrets: inherit
 
   # =========================================================================
   # PHASE 3 — BUILDS
-  # All jobs need warm-if-needed. A skipped warm-if-needed is treated as
-  # satisfied. if: !cancelled() prevents skipping when warm was skipped.
-  # Artifacts use 3-day retention; publish-release is the canonical distribution.
   # =========================================================================
 
   macos-arm-app:
@@ -218,12 +170,12 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
-      ref:                     main
+      ref:                     ${{ github.ref }}
       runner:                  macos-15
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('release-{0}-APP-qt6', github.ref_name) }}
       artifact_retention_days: 3
 
   macos-intel-app:
@@ -232,12 +184,12 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
-      ref:                     main
+      ref:                     ${{ github.ref }}
       runner:                  macos-15-intel
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('release-{0}-APP-qt6', github.ref_name) }}
       artifact_retention_days: 3
 
   windows-app:
@@ -246,12 +198,12 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
-      ref:                     main
+      ref:                     ${{ github.ref }}
       runner:                  windows-2022
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('release-{0}-APP-qt6', github.ref_name) }}
       artifact_retention_days: 3
 
   ubuntu-app:
@@ -260,12 +212,12 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
-      ref:                     main
+      ref:                     ${{ github.ref }}
       runner:                  ubuntu-24.04
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('release-{0}-APP-qt6', github.ref_name) }}
       artifact_retention_days: 3
 
   ubuntu-hpc:
@@ -274,12 +226,12 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
-      ref:                     main
+      ref:                     ${{ github.ref }}
       runner:                  ubuntu-24.04
       qt_variant:              qt6
       profile:                 HPC
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-HPC-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('release-{0}-HPC-qt6', github.ref_name) }}
       artifact_retention_days: 3
 
   rocky8-app:
@@ -288,13 +240,13 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
-      ref:                     main
+      ref:                     ${{ github.ref }}
       runner:                  ubuntu-24.04
       cache_os_label:          rocky8
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('release-{0}-APP-qt6', github.ref_name) }}
       artifact_retention_days: 3
 
   rocky8-hpc:
@@ -303,25 +255,22 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
-      ref:                     main
+      ref:                     ${{ github.ref }}
       runner:                  ubuntu-24.04
       cache_os_label:          rocky8
       qt_variant:              qt6
       profile:                 HPC
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-HPC-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('release-{0}-HPC-qt6', github.ref_name) }}
       artifact_retention_days: 3
 
   # =========================================================================
   # PHASE 4 — PUBLISH RELEASE
-  # Runs only when all builds succeed. Downloads all run artifacts, renames
-  # each to a stable filename, then publishes/overwrites the rolling `nightly`
-  # GitHub Release. The release assets are the canonical distribution —
-  # artifact retention stays at 3 days.
+  # Creates a permanent versioned GitHub Release tagged v*.
   # =========================================================================
 
   publish-release:
-    name: "Publish nightly release"
+    name: "Publish release ${{ github.ref_name }}"
     needs:
       - macos-arm-app
       - macos-intel-app
@@ -335,13 +284,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 1
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v6
         with:
-          pattern: nightly-*
+          pattern: release-${{ github.ref_name }}-*
           path: artifacts
           run-id: ${{ github.run_id }}
 
@@ -361,34 +310,32 @@ jobs:
           }
 
           echo "Staging release assets..."
-          cp_first "artifacts/nightly-*-APP-qt6-macos-15-*/UltraScan3-*-macOS.pkg"         "UltraScan3-APP-macos-arm.pkg"
-          cp_first "artifacts/nightly-*-APP-qt6-macos-15-intel-*/UltraScan3-*-macOS.pkg"   "UltraScan3-APP-macos-intel.pkg"
-          cp_first "artifacts/nightly-*-APP-qt6-windows-2022-*/UltraScan3-*-Windows.exe"   "UltraScan3-APP-windows-x64.exe"
-          cp_first "artifacts/nightly-*-APP-qt6-ubuntu-24.04-*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-APP-linux-x64.tar.gz"
-          cp_first "artifacts/nightly-*-HPC-qt6-ubuntu-24.04-*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-HPC-linux-x64.tar.gz"
-          cp_first "artifacts/nightly-*-APP-qt6-rocky8-*/UltraScan3-*-Linux-*.tar.gz"      "UltraScan3-APP-rocky8-x64.tar.gz"
-          cp_first "artifacts/nightly-*-HPC-qt6-rocky8-*/UltraScan3-*-Linux-*.tar.gz"      "UltraScan3-HPC-rocky8-x64.tar.gz"
+          cp_first "artifacts/release-*-APP-qt6-macos-15-*/UltraScan3-*-macOS.pkg"          "UltraScan3-APP-macos-arm.pkg"
+          cp_first "artifacts/release-*-APP-qt6-macos-15-intel-*/UltraScan3-*-macOS.pkg"    "UltraScan3-APP-macos-intel.pkg"
+          cp_first "artifacts/release-*-APP-qt6-windows-2022-*/UltraScan3-*-Windows.exe"    "UltraScan3-APP-windows-x64.exe"
+          cp_first "artifacts/release-*-APP-qt6-ubuntu-24.04-*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-APP-linux-x64.tar.gz"
+          cp_first "artifacts/release-*-HPC-qt6-ubuntu-24.04-*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-HPC-linux-x64.tar.gz"
+          cp_first "artifacts/release-*-APP-qt6-rocky8-*/UltraScan3-*-Linux-*.tar.gz"       "UltraScan3-APP-rocky8-x64.tar.gz"
+          cp_first "artifacts/release-*-HPC-qt6-rocky8-*/UltraScan3-*-Linux-*.tar.gz"       "UltraScan3-HPC-rocky8-x64.tar.gz"
 
           echo "Assets ready:"
           ls -lh release-assets/
 
-      - name: Publish rolling nightly release
+      - name: Publish versioned release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
 
-          TAG="nightly"
+          TAG="${{ github.ref_name }}"
           COMMIT=$(git rev-parse HEAD)
           DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
 
-          NOTES="## UltraScan3 Nightly Build
+          NOTES="## UltraScan3 $TAG
 
-          **Date:** $DATE
+          **Released:** $DATE
           **Commit:** $COMMIT
-
-          Automated nightly build from \`main\`. All platforms passed.
 
           | Asset | Platform | Profile |
           |-------|----------|---------|
@@ -400,13 +347,7 @@ jobs:
           | \`UltraScan3-APP-rocky8-x64.tar.gz\`| Rocky Linux 8 x64         | Desktop |
           | \`UltraScan3-HPC-rocky8-x64.tar.gz\`| Rocky Linux 8 x64         | HPC/MPI |"
 
-          # Delete existing nightly release and tag if present
-          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          sleep 2
-
-          # Create new release with all assets
           gh release create "$TAG" release-assets/* \
-            --title "Nightly Build" \
+            --title "UltraScan3 $TAG" \
             --notes "$NOTES" \
-            --prerelease \
             --target main
