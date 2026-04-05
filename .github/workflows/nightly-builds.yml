@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
 
@@ -65,9 +66,7 @@ jobs:
       - id: probe
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           lookup-only: true
 
@@ -86,9 +85,7 @@ jobs:
       - id: probe
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-ubuntu-24.04-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           lookup-only: true
 
@@ -107,9 +104,7 @@ jobs:
       - id: probe
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           lookup-only: true
 
@@ -128,9 +123,7 @@ jobs:
       - id: probe
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-macos-15-intel-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           lookup-only: true
 
@@ -149,9 +142,7 @@ jobs:
       - id: probe
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           lookup-only: true
 
@@ -170,21 +161,21 @@ jobs:
       - id: probe
         uses: actions/cache/restore@v5
         with:
-          path: |
-            ${{ runner.temp }}/us3-vcpkg-cache
-            ${{ runner.temp }}/us3-vcpkg-downloads
+          path: ${{ runner.temp }}/us3-vcpkg-cache
           key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
           lookup-only: true
 
   # =========================================================================
   # PHASE 2 — CONDITIONAL WARM
-  # Fires if any probe missed. Idempotent — platforms with a hot cache
-  # short-circuit at stage 1. Windows fits in a single run; no warm needed.
+  # Fires only when has_changes is true AND at least one probe missed.
+  # Gating on has_changes prevents the skipped-probe empty-output false-positive
+  # where '' != 'true' evaluates true for all six conditions.
   # =========================================================================
 
   warm-if-needed:
     name: "Warm caches (if any miss)"
     needs:
+      - check-changes
       - probe-ubuntu-app
       - probe-ubuntu-hpc
       - probe-macos-arm
@@ -192,12 +183,14 @@ jobs:
       - probe-rocky8-app
       - probe-rocky8-hpc
     if: |
-      needs.probe-ubuntu-app.outputs.cache-hit   != 'true' ||
-      needs.probe-ubuntu-hpc.outputs.cache-hit   != 'true' ||
-      needs.probe-macos-arm.outputs.cache-hit    != 'true' ||
-      needs.probe-macos-intel.outputs.cache-hit  != 'true' ||
-      needs.probe-rocky8-app.outputs.cache-hit   != 'true' ||
-      needs.probe-rocky8-hpc.outputs.cache-hit   != 'true'
+      needs.check-changes.outputs.has_changes == 'true' && (
+        needs.probe-ubuntu-app.outputs.cache-hit   != 'true' ||
+        needs.probe-ubuntu-hpc.outputs.cache-hit   != 'true' ||
+        needs.probe-macos-arm.outputs.cache-hit    != 'true' ||
+        needs.probe-macos-intel.outputs.cache-hit  != 'true' ||
+        needs.probe-rocky8-app.outputs.cache-hit   != 'true' ||
+        needs.probe-rocky8-hpc.outputs.cache-hit   != 'true'
+      )
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
     with:
       ref:        main
@@ -207,15 +200,16 @@ jobs:
 
   # =========================================================================
   # PHASE 3 — BUILDS
-  # All jobs need warm-if-needed. A skipped warm-if-needed is treated as
-  # satisfied. if: !cancelled() prevents skipping when warm was skipped.
-  # Artifacts use 3-day retention; publish-release is the canonical distribution.
+  # Gated on has_changes so they don't run when warm-if-needed was skipped
+  # due to no changes (skipped jobs still satisfy !cancelled()).
   # =========================================================================
 
   macos-arm-app:
     name: "macOS ARM APP (macos-15, qt6)"
-    needs: warm-if-needed
-    if: ${{ !cancelled() }}
+    needs:
+      - check-changes
+      - warm-if-needed
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     main
@@ -228,8 +222,10 @@ jobs:
 
   macos-intel-app:
     name: "macOS Intel APP (macos-15-intel, qt6)"
-    needs: warm-if-needed
-    if: ${{ !cancelled() }}
+    needs:
+      - check-changes
+      - warm-if-needed
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     main
@@ -242,8 +238,10 @@ jobs:
 
   windows-app:
     name: "Windows x64 APP (windows-2022, qt6)"
-    needs: warm-if-needed
-    if: ${{ !cancelled() }}
+    needs:
+      - check-changes
+      - warm-if-needed
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     main
@@ -256,8 +254,10 @@ jobs:
 
   ubuntu-app:
     name: "Linux x64 APP (ubuntu-24.04, qt6)"
-    needs: warm-if-needed
-    if: ${{ !cancelled() }}
+    needs:
+      - check-changes
+      - warm-if-needed
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     main
@@ -270,8 +270,10 @@ jobs:
 
   ubuntu-hpc:
     name: "Linux x64 HPC (ubuntu-24.04, qt6)"
-    needs: warm-if-needed
-    if: ${{ !cancelled() }}
+    needs:
+      - check-changes
+      - warm-if-needed
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     main
@@ -284,8 +286,10 @@ jobs:
 
   rocky8-app:
     name: "Rocky Linux 8 x64 APP (qt6)"
-    needs: warm-if-needed
-    if: ${{ !cancelled() }}
+    needs:
+      - check-changes
+      - warm-if-needed
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     main
@@ -299,8 +303,10 @@ jobs:
 
   rocky8-hpc:
     name: "Rocky Linux 8 x64 HPC (qt6)"
-    needs: warm-if-needed
-    if: ${{ !cancelled() }}
+    needs:
+      - check-changes
+      - warm-if-needed
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     main
