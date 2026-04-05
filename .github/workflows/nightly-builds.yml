@@ -12,34 +12,90 @@ run-name: >-
 on:
   schedule:
     - cron: "0 4 * * *"   # 04:00 UTC daily, always from the default branch (main)
-  workflow_dispatch:        # manual trigger for testing; builds main unless the
-  # default branch has been changed in repo settings
+  workflow_dispatch:        # manual trigger always proceeds regardless of change detection
 
 # ---------------------------------------------------------------------------
-# Cache key used by the reusable build workflow (exact match — no fallback).
-# Format:
-#   vcpkg-<os>-<qt_variant>-<profile>-<hashFiles(vcpkg.json, admin/cmake/**, CMakeLists.txt)>
+# DESIGN NOTES
 #
-# Probe jobs restore with lookup-only: true against the primary key.
-# A cache miss triggers the warm workflow before any build job runs, ensuring
-# the build always gets an exact-key hit and never falls back to a partial cache
-# (which risks OOM / disk-full failures on large Qt builds).
+# PHASE 0 — CHANGE DETECTION
+#   A single lightweight job checks whether any commits landed on main in the
+#   last 24 hours. Scheduled runs that find no changes skip all subsequent
+#   phases entirely. workflow_dispatch always sets has_changes=true so
+#   manual triggers are never gated.
+#
+# PHASE 1 — CACHE PROBES
+#   One probe per platform/profile checks for an exact-key warm cache using
+#   lookup-only: true (no download). A miss triggers Phase 2.
+#   Key format: vcpkg-<os>-<qt_variant>-<profile>-<hash(vcpkg.json, admin/cmake/**, CMakeLists.txt)>
+#
+# PHASE 2 — CONDITIONAL WARM
+#   Runs the reusable warm-cache workflow if any Phase 1 probe missed.
+#   The warm workflow is idempotent — platforms with a hot cache short-circuit
+#   at stage 1. Windows is excluded (vcpkg fits in a single build run).
+#
+# PHASE 3 — BUILDS
+#   All build jobs need warm-if-needed. A skipped warm-if-needed is treated
+#   as satisfied by GitHub so builds proceed immediately when all probes hit.
+#   Artifacts default to 3-day retention (short, covers failures).
+#
+# PHASE 4 — PROMOTE ARTIFACTS
+#   Runs only when every build job succeeded. Uses the GitHub API to extend
+#   artifact retention to 30 days on successful nightly runs. Failed run
+#   artifacts expire in 3 days automatically.
 # ---------------------------------------------------------------------------
 
 permissions:
   contents: read
+  actions:  write   # required for artifact retention promotion via gh api
 
 jobs:
 
   # =========================================================================
+  # PHASE 0 — CHANGE DETECTION
+  # Checks for commits on main in the last 24 hours.
+  # workflow_dispatch bypasses this check — has_changes is always true.
+  # All subsequent phases gate on needs.check-changes.outputs.has_changes == 'true'.
+  # =========================================================================
+
+  check-changes:
+    name: "Check for changes in last 24h"
+    runs-on: ubuntu-24.04
+    outputs:
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0   # full history needed for git log --since
+
+      - name: Detect commits in last 24 hours
+        id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Manual trigger — skipping change detection"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COUNT=$(git log --oneline --since="24 hours ago" origin/main | wc -l | tr -d ' ')
+          echo "Commits in last 24h: $COUNT"
+          if [[ "$COUNT" -gt 0 ]]; then
+            echo "has_changes=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # =========================================================================
   # PHASE 1 — CACHE PROBES
-  # Each probe checks whether an exact-match warm cache exists for its
-  # platform. Probes run on the actual build runner so the hash inputs
-  # (checked out from main) are identical to what the build job will see.
+  # Each probe checks for an exact-match warm cache for its platform/profile.
+  # Probes run on the actual build runner so hashFiles() sees identical inputs
+  # to what the build job will compute.
   # =========================================================================
 
   probe-ubuntu-app:
     name: "Probe cache: ubuntu-24.04 / qt6 / APP"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -60,6 +116,8 @@ jobs:
 
   probe-ubuntu-hpc:
     name: "Probe cache: ubuntu-24.04 / qt6 / HPC"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -80,6 +138,8 @@ jobs:
 
   probe-macos-app:
     name: "Probe cache: macos-15 / qt6 / APP"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: macos-15
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -100,6 +160,8 @@ jobs:
 
   probe-rocky8-app:
     name: "Probe cache: rocky8 / qt6 / APP"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -120,6 +182,8 @@ jobs:
 
   probe-rocky8-hpc:
     name: "Probe cache: rocky8 / qt6 / HPC"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -140,11 +204,9 @@ jobs:
 
   # =========================================================================
   # PHASE 2 — CONDITIONAL WARM
-  # Runs the reusable warm-cache workflow (all platforms, qt6) if ANY
-  # probe above reported a miss. Windows never needs a warm (vcpkg fits
-  # comfortably in a single run on windows-2022). The warm workflow is
-  # idempotent — platforms that already have an exact-key cache will
-  # short-circuit at their first stage restore.
+  # Runs if any probe missed. Passes platforms=all so the warm workflow
+  # covers every platform; platforms with a hot cache short-circuit at stage 1.
+  # Windows is excluded from warming (vcpkg fits in a single build run).
   # =========================================================================
 
   warm-if-needed:
@@ -170,15 +232,15 @@ jobs:
 
   # =========================================================================
   # PHASE 3 — BUILDS
-  # All build jobs declare `needs: warm-if-needed`.
-  # When warm-if-needed is skipped (all probes hit), GitHub treats the
-  # skipped job as satisfied and the builds run immediately.
-  # When warm-if-needed runs, builds wait until it completes successfully.
+  # All build jobs need warm-if-needed. A skipped warm-if-needed is treated
+  # as satisfied so builds proceed immediately when all probes hit.
+  # if: !cancelled() prevents builds being skipped just because warm was skipped.
+  # Artifacts default to 3-day retention; Phase 4 promotes to 30 days on
+  # full success.
   # =========================================================================
 
   # -------------------------------------------------------------------------
   # macOS ARM — APP profile, Qt6
-  # Artifact: nightly-<run_id>-APP-qt6-macos-15
   # -------------------------------------------------------------------------
   macos-arm-app:
     name: "macOS ARM APP (macos-15, qt6)"
@@ -192,12 +254,10 @@ jobs:
       profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
-      artifact_retention_days: 7
+      artifact_retention_days: 3
 
   # -------------------------------------------------------------------------
   # Windows x64 — APP profile, Qt6
-  # Windows does not need cache warming; vcpkg fits in a single run.
-  # Artifact: nightly-<run_id>-APP-qt6-windows-2022
   # -------------------------------------------------------------------------
   windows-app:
     name: "Windows x64 APP (windows-2022, qt6)"
@@ -211,11 +271,10 @@ jobs:
       profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
-      artifact_retention_days: 7
+      artifact_retention_days: 3
 
   # -------------------------------------------------------------------------
   # Linux x64 — APP profile, Qt6
-  # Artifact: nightly-<run_id>-APP-qt6-ubuntu-24.04
   # -------------------------------------------------------------------------
   ubuntu-app:
     name: "Linux x64 APP (ubuntu-24.04, qt6)"
@@ -229,12 +288,10 @@ jobs:
       profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
-      artifact_retention_days: 7
+      artifact_retention_days: 3
 
   # -------------------------------------------------------------------------
   # Linux x64 — HPC profile, Qt6
-  # Headless cluster build; requires MPI (installed by build.sh when CI=true).
-  # Artifact: nightly-<run_id>-HPC-qt6-ubuntu-24.04
   # -------------------------------------------------------------------------
   ubuntu-hpc:
     name: "Linux x64 HPC (ubuntu-24.04, qt6)"
@@ -248,12 +305,10 @@ jobs:
       profile:                 HPC
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('nightly-{0}-HPC-qt6', github.run_id) }}
-      artifact_retention_days: 7
+      artifact_retention_days: 3
 
   # -------------------------------------------------------------------------
   # Rocky Linux 8 x64 — APP profile, Qt6
-  # Runs in a rockylinux:8 container on ubuntu-24.04.
-  # Artifact: nightly-<run_id>-APP-qt6-rocky8
   # -------------------------------------------------------------------------
   rocky8-app:
     name: "Rocky Linux 8 x64 APP (qt6)"
@@ -268,11 +323,10 @@ jobs:
       profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
-      artifact_retention_days: 7
+      artifact_retention_days: 3
 
   # -------------------------------------------------------------------------
   # Rocky Linux 8 x64 — HPC profile, Qt6
-  # Artifact: nightly-<run_id>-HPC-qt6-rocky8
   # -------------------------------------------------------------------------
   rocky8-hpc:
     name: "Rocky Linux 8 x64 HPC (qt6)"
@@ -287,4 +341,45 @@ jobs:
       profile:                 HPC
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('nightly-{0}-HPC-qt6', github.run_id) }}
-      artifact_retention_days: 7
+      artifact_retention_days: 3
+
+  # =========================================================================
+  # PHASE 4 — PROMOTE ARTIFACTS
+  # Runs only when every build job succeeded. Uses the GitHub API to extend
+  # retention on all artifacts from this run to 30 days, marking it as a
+  # known-good nightly. Failed runs let their 3-day artifacts expire naturally.
+  # Requires actions: write permission (declared at workflow level).
+  # =========================================================================
+
+  promote-artifacts:
+    name: "Promote artifacts to 30-day retention"
+    needs:
+      - macos-arm-app
+      - windows-app
+      - ubuntu-app
+      - ubuntu-hpc
+      - rocky8-app
+      - rocky8-hpc
+    if: success()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Extend artifact retention to 30 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO:     ${{ github.repository }}
+          RUN_ID:   ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Fetching artifact list for run $RUN_ID..."
+          ARTIFACTS=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+            --paginate --jq '.artifacts[].id')
+          COUNT=0
+          for ID in $ARTIFACTS; do
+            echo "  Updating artifact $ID → 30 days"
+            gh api --method PATCH "repos/$REPO/actions/artifacts/$ID" \
+              --field expires_at="$(date -u -d '+30 days' '+%Y-%m-%dT%H:%M:%SZ')" \
+              --silent || echo "  Warning: failed to update artifact $ID (may already be expired)"
+            COUNT=$((COUNT + 1))
+          done
+          echo "Updated $COUNT artifact(s) to 30-day retention."
