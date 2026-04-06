@@ -1,76 +1,45 @@
 name: UltraScan3 On-Demand Build
 
-# Run title shown in the Actions list — no need to open the run to know what it built.
-# Example: "On-Demand [feature/hpc-fix] APP qt6 by @ehb54"
-run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.platforms }} ${{ inputs.profile }} ${{ inputs.qt_version }} by @${{ github.actor }}"
+# ============================================================================
+# Manual dispatch: run any single platform, any combination, or all.
+# Each selected platform executes independently with its own probe/warm/build.
+# Windows goes direct to build with no warm phase.
+#
+# Selecting a platform here fans out to the corresponding nightly-<platform>.yml
+# via workflow_call so the logic stays in one place.
+# ============================================================================
+
+run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.platforms }} by @${{ github.actor }}"
 
 on:
   workflow_dispatch:
     inputs:
 
       ref:
-        # Branch name (e.g. "main", "feature/hpc-fix"), tag (e.g. "v4.0.1"),
-        # or full 40-character commit SHA.
-        # NOTE: tags are repository-global — a tag cannot exist on two branches
-        # simultaneously. If you need to build a specific commit on a feature
-        # branch that has no tag, use the SHA directly.
         description: "Branch, tag, or SHA to build"
         required: true
         default: "main"
         type: string
 
       platforms:
-        # Choose a single platform, a named group, or "all".
-        # "macos only"  = macos-15 + macos-15-intel
-        # "linux only"  = ubuntu-24.04 + ubuntu-24.04-arm + rocky8-x64
-        # "all"         = every platform above plus windows-2022
         description: "Platforms to build"
         required: true
-        default: "macos-arm (macos-15)"
+        default: "ubuntu"
         type: choice
         options:
-          - "all"
-          - "macos-arm (macos-15)"
-          - "macos-intel (macos-15-intel)"
-          - "ubuntu-x64 (ubuntu-24.04)"
-          - "ubuntu-arm (ubuntu-24.04-arm)"
-          - "windows (windows-2022)"
-          - "rocky8-x64 (rockylinux:8)"
-          - "macos only"
-          - "linux only"
-
-      profile:
-        # APP  — full desktop build: GUI + programs + database client
-        # TEST — programs + test suite; no GUI (faster, used for CI validation)
-        # HPC  — headless cluster build; no GUI, no DB, requires MPI
-        description: "Build profile"
-        required: true
-        default: "APP"
-        type: choice
-        options:
-          - APP
-          - TEST
-          - HPC
-
-      qt_version:
-        # qt6 — Qt 6 + Qwt 6.3.0
-        # qt5 — Qt 5 + Qwt 6.3.0
-        description: "Qt version"
-        required: true
-        default: "qt6"
-        type: choice
-        options:
-          - qt6
-          - qt5
+          - all
+          - ubuntu
+          - macos-arm
+          - macos-intel
+          - windows
+          - rocky8
+          - linux          # ubuntu + rocky8
+          - macos          # macos-arm + macos-intel
 
       clean_tier:
-        # incremental      — only rebuild changed files (fastest, default)
-        # rebuild          — wipe CMake build dir, keep vcpkg cache
-        # clean            — wipe build dir + reinstall vcpkg packages for triplet
-        # clean-purge-cache — full recompile from source (slowest)
-        description: "Clean tier: incremental=reuse build dir, rebuild=wipe build dir, clean=reinstall vcpkg, clean-purge-cache=full source rebuild"
+        description: "Clean tier"
         required: true
-        default: "incremental"
+        default: incremental
         type: choice
         options:
           - incremental
@@ -79,140 +48,83 @@ on:
           - clean-purge-cache
 
       artifact_retention_days:
-        # How long GitHub keeps the build artifacts before deleting them.
-        # On-demand builds default to 7 days; increase if you need longer access.
         description: "Artifact retention (days)"
         required: true
         default: "7"
         type: choice
-        options:
-          - "3"
-          - "7"
-          - "14"
-          - "30"
+        options: ["3","7","14","30"]
+
+permissions:
+  contents: read
+  actions: write
 
 jobs:
 
-  # -------------------------------------------------------------------------
-  # macOS ARM (macos-15, Apple Silicon)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-macos-15
-  # -------------------------------------------------------------------------
-  build-macos-arm:
-    name: "macOS ARM (macos-15)"
+  ubuntu:
+    name: "Ubuntu 24.04 (APP + HPC)"
     if: |
-      inputs.platforms == 'all' ||
-      inputs.platforms == 'macos-arm (macos-15)' ||
-      inputs.platforms == 'macos only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+      inputs.platforms == 'all'    ||
+      inputs.platforms == 'ubuntu' ||
+      inputs.platforms == 'linux'
+    uses: ./.github/workflows/nightly-ubuntu.yml
     with:
       ref:                     ${{ inputs.ref }}
-      runner:                  macos-15
-      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
-      profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+    secrets: inherit
 
-  # -------------------------------------------------------------------------
-  # macOS Intel (macos-15-intel, x86-64)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-macos-15-intel
-  # -------------------------------------------------------------------------
-  build-macos-intel:
-    name: "macOS Intel (macos-15-intel)"
+  macos-arm:
+    name: "macOS ARM (APP)"
     if: |
-      inputs.platforms == 'all' ||
-      inputs.platforms == 'macos-intel (macos-15-intel)' ||
-      inputs.platforms == 'macos only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+      inputs.platforms == 'all'       ||
+      inputs.platforms == 'macos-arm' ||
+      inputs.platforms == 'macos'
+    uses: ./.github/workflows/nightly-macos-arm.yml
     with:
       ref:                     ${{ inputs.ref }}
-      runner:                  macos-15-intel
-      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
-      profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+    secrets: inherit
 
-  # -------------------------------------------------------------------------
-  # Linux x64 (ubuntu-24.04)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-ubuntu-24.04
-  # -------------------------------------------------------------------------
-  build-ubuntu-x64:
-    name: "Linux x64 (ubuntu-24.04)"
+  macos-intel:
+    name: "macOS Intel (APP)"
     if: |
-      inputs.platforms == 'all' ||
-      inputs.platforms == 'ubuntu-x64 (ubuntu-24.04)' ||
-      inputs.platforms == 'linux only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+      inputs.platforms == 'all'         ||
+      inputs.platforms == 'macos-intel' ||
+      inputs.platforms == 'macos'
+    uses: ./.github/workflows/nightly-macos-intel.yml
     with:
       ref:                     ${{ inputs.ref }}
-      runner:                  ubuntu-24.04
-      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
-      profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+    secrets: inherit
 
-  # -------------------------------------------------------------------------
-  # Linux ARM64 (ubuntu-24.04-arm)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-ubuntu-24.04-arm
-  # -------------------------------------------------------------------------
-  build-ubuntu-arm:
-    name: "Linux ARM64 (ubuntu-24.04-arm)"
+  windows:
+    name: "Windows x64 (APP)"
     if: |
-      inputs.platforms == 'all' ||
-      inputs.platforms == 'ubuntu-arm (ubuntu-24.04-arm)' ||
-      inputs.platforms == 'linux only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+      inputs.platforms == 'all'     ||
+      inputs.platforms == 'windows'
+    uses: ./.github/workflows/nightly-windows.yml
     with:
       ref:                     ${{ inputs.ref }}
-      runner:                  ubuntu-24.04-arm
-      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
-      profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
+    secrets: inherit
 
-  # -------------------------------------------------------------------------
-  # Windows x64 (windows-2022)
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-<qt_version>-windows-2022
-  # -------------------------------------------------------------------------
-  build-windows:
-    name: "Windows x64 (windows-2022)"
+  rocky8:
+    name: "Rocky Linux 8 x64 (APP + HPC)"
     if: |
-      inputs.platforms == 'all' ||
-      inputs.platforms == 'windows (windows-2022)'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+      inputs.platforms == 'all'    ||
+      inputs.platforms == 'rocky8' ||
+      inputs.platforms == 'linux'
+    uses: ./.github/workflows/nightly-rocky8.yml
     with:
       ref:                     ${{ inputs.ref }}
-      runner:                  windows-2022
-      qt_variant:              ${{ inputs.qt_version == 'qt6' && 'qt6' || 'qt5-qwt630' }}
-      profile:                 ${{ inputs.profile }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-{3}', github.run_number, inputs.ref, inputs.profile, inputs.qt_version) }}
+      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
-
-  # -------------------------------------------------------------------------
-  # Rocky Linux 8 x64 (rockylinux:8 container on ubuntu-24.04)
-  # Always builds Qt6 — Qt5 is not supported on Rocky 8.
-  # cache_os_label isolates Rocky 8 binaries from Ubuntu binaries in the
-  # vcpkg cache (different glibc version).
-  # Artifact: ondemand-<run_number>-<ref>-<profile>-qt6-rocky8-x64
-  # -------------------------------------------------------------------------
-  build-rocky8:
-    name: "Rocky Linux 8 x64"
-    if: |
-      inputs.platforms == 'all' ||
-      inputs.platforms == 'rocky8-x64 (rockylinux:8)' ||
-      inputs.platforms == 'linux only'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
-    with:
-      ref:                     ${{ inputs.ref }}
-      runner:                  ubuntu-24.04
-      cache_os_label:          rocky8
-      qt_variant:              qt6
-      profile:                 ${{ inputs.profile }}
-      clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}-{2}-qt6', github.run_number, inputs.ref, inputs.profile) }}
-      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
-
+    secrets: inherit

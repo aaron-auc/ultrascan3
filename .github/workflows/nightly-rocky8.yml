@@ -1,0 +1,187 @@
+name: Nightly — Rocky Linux 8
+
+# ============================================================================
+# Platform: Rocky Linux 8 x64 (rockylinux:8 container on ubuntu-24.04)
+# Profiles:  APP + HPC
+# Schedule:  nightly (selected platform)
+# Release:   called by release.yml via workflow_call
+# Manual:    workflow_dispatch on this file
+# ============================================================================
+#
+# Cache isolation strategy:
+#   Probe + warm are scoped to rocky8 keys only.
+#   A miss here does NOT trigger warming on any other platform.
+#   The warm job is skipped when probe jobs were skipped (no changes).
+
+run-name: >-
+  ${{ github.event_name == 'schedule'
+    && format('Nightly Rocky8 [{0}]', github.run_started_at)
+    || github.event_name == 'workflow_call'
+    && format('Release Rocky8 [{0}]', inputs.ref)
+    || format('Manual Rocky8 by @{0}', github.actor) }}
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA"
+        required: false
+        default: main
+        type: string
+      clean_tier:
+        description: "Clean tier"
+        required: false
+        default: incremental
+        type: choice
+        options: [incremental, rebuild, clean, clean-purge-cache]
+      artifact_retention_days:
+        description: "Artifact retention (days)"
+        required: false
+        default: "3"
+        type: choice
+        options: ["3","7","14","30"]
+
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: main
+      clean_tier:
+        required: false
+        type: string
+        default: incremental
+      artifact_name_prefix:
+        required: false
+        type: string
+        default: ""
+      artifact_retention_days:
+        required: false
+        type: number
+        default: 3
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+
+  # --------------------------------------------------------------------------
+  # PHASE 0 — CHANGE DETECTION
+  # Probe jobs run on ubuntu-24.04 (Rocky key lookup doesn't require the container).
+  # --------------------------------------------------------------------------
+  check-changes:
+    name: "Check for changes in last 24h"
+    runs-on: ubuntu-24.04
+    outputs:
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+          fetch-depth: 0
+      - id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COUNT=$(git log --oneline --since="24 hours ago" origin/main | wc -l | tr -d ' ')
+          echo "Commits in last 24h: $COUNT"
+          echo "has_changes=$( [[ $COUNT -gt 0 ]] && echo true || echo false )" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------------
+  # PHASE 1 — CACHE PROBES  (rocky8-specific keys, no container needed)
+  # --------------------------------------------------------------------------
+  probe-app:
+    name: "Probe: rocky8 / qt6 / APP"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      cache-hit: ${{ steps.probe.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+          fetch-depth: 1
+      - id: probe
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          lookup-only: true
+
+  probe-hpc:
+    name: "Probe: rocky8 / qt6 / HPC"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      cache-hit: ${{ steps.probe.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+          fetch-depth: 1
+      - id: probe
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/us3-vcpkg-cache
+          key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          lookup-only: true
+
+  # --------------------------------------------------------------------------
+  # PHASE 2 — CONDITIONAL WARM  (rocky8 platform only)
+  # --------------------------------------------------------------------------
+  warm-if-needed:
+    name: "Warm rocky8 caches (if any miss)"
+    needs: [check-changes, probe-app, probe-hpc]
+    if: |
+      needs.check-changes.outputs.has_changes == 'true' && (
+        needs.probe-app.outputs.cache-hit != 'true' ||
+        needs.probe-hpc.outputs.cache-hit != 'true'
+      )
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
+    with:
+      ref:        ${{ inputs.ref || 'main' }}
+      platforms:  "rocky8-x64"
+      qt_variant: qt6
+    secrets: inherit
+
+  # --------------------------------------------------------------------------
+  # PHASE 3 — BUILDS
+  # --------------------------------------------------------------------------
+  build-app:
+    name: "Rocky8 APP (qt6)"
+    needs: [check-changes, warm-if-needed]
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+    with:
+      ref:                     ${{ inputs.ref || 'main' }}
+      runner:                  ubuntu-24.04
+      cache_os_label:          rocky8
+      qt_variant:              qt6
+      profile:                 APP
+      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-rocky8-{0}-APP-qt6', github.run_id) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
+
+  build-hpc:
+    name: "Rocky8 HPC (qt6)"
+    needs: [check-changes, warm-if-needed]
+    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+    with:
+      ref:                     ${{ inputs.ref || 'main' }}
+      runner:                  ubuntu-24.04
+      cache_os_label:          rocky8
+      qt_variant:              qt6
+      profile:                 HPC
+      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-rocky8-{0}-HPC-qt6', github.run_id) }}
+      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
