@@ -97,13 +97,11 @@ jobs:
   publish-release:
     name: "Publish nightly release"
     needs:
-      - macos-arm-app
-      - macos-intel-app
-      - windows-app
-      - ubuntu-app
-      - ubuntu-hpc
-      - rocky8-app
-      - rocky8-hpc
+      - ubuntu
+      - rocky8
+      - macos-arm
+      - macos-intel
+      - windows
     if: success()
     runs-on: ubuntu-24.04
     steps:
