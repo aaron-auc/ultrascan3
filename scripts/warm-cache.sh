@@ -320,7 +320,14 @@ export VCPKG_DOWNLOADS="$US3_VCPKG_DOWNLOADS"
 export VCPKG_INSTALL_OPTIONS="--clean-after-build"
 
 CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-export VCPKG_MAX_CONCURRENCY="$CORES"
+# Cap concurrency to 1 on macOS stage 3 (qtmultimedia + qtdeclarative).
+# qtdeclarative's PCH files race against dependent TUs under parallel builds,
+# causing "No such file or directory" errors for cmake_pch.hxx.pch.
+if [ "$PLATFORM" = "macOS" ] && [ "$STAGE" = "3" ]; then
+  export VCPKG_MAX_CONCURRENCY=1
+else
+  export VCPKG_MAX_CONCURRENCY="$CORES"
+fi
 
 OVERLAY_TRIPLETS="${SOURCE_DIR}/admin/cmake/triplets"
 OVERLAY_PORTS="${SOURCE_DIR}/buildsys/vcpkg/overlay-ports"
