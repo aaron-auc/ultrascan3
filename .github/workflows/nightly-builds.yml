@@ -17,306 +17,74 @@ permissions:
 jobs:
 
   # =========================================================================
-  # PHASE 0 — CHANGE DETECTION
-  # Scheduled runs skip everything if no commits landed on main in 24h.
-  # workflow_dispatch always proceeds.
+  # PLATFORM BUILDS — serialized to avoid simultaneous warm cache writes
+  # exhausting the 10 GB Actions cache quota.
+  #
+  # Each platform workflow owns its own probe → warm → build chain.
+  # Running them one after the other ensures only one platform's intermediate
+  # stage caches exist at a time, and the warm cleanup job has time to delete
+  # them before the next platform starts.
+  #
+  # Order: ubuntu → rocky8 → macos-arm → macos-intel → windows
   # =========================================================================
 
-  check-changes:
-    name: "Check for changes in last 24h"
-    runs-on: ubuntu-24.04
-    outputs:
-      has_changes: ${{ steps.detect.outputs.has_changes }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Detect commits in last 24 hours
-        id: detect
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          COUNT=$(git log --oneline --since="24 hours ago" origin/main | wc -l | tr -d ' ')
-          echo "Commits in last 24h: $COUNT"
-          echo "has_changes=$( [[ $COUNT -gt 0 ]] && echo true || echo false )" >> "$GITHUB_OUTPUT"
-
-  # =========================================================================
-  # PHASE 1 — CACHE PROBES
-  # Exact-key lookup (no download) for each platform/profile.
-  # A miss triggers Phase 2 warm for all platforms.
-  # Key: vcpkg-<os>-qt6-<profile>-<hash(vcpkg.json, admin/cmake/**, CMakeLists.txt)>
-  # =========================================================================
-
-  probe-ubuntu-app:
-    name: "Probe: ubuntu-24.04 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubuntu-24.04
-    outputs:
-      cache-hit: ${{ steps.probe.outputs.cache-hit }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 1
-      - id: probe
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-          lookup-only: true
-
-  probe-ubuntu-hpc:
-    name: "Probe: ubuntu-24.04 / qt6 / HPC"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubuntu-24.04
-    outputs:
-      cache-hit: ${{ steps.probe.outputs.cache-hit }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 1
-      - id: probe
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-ubuntu-24.04-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-          lookup-only: true
-
-  probe-macos-arm:
-    name: "Probe: macos-15 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: macos-15
-    outputs:
-      cache-hit: ${{ steps.probe.outputs.cache-hit }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 1
-      - id: probe
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-          lookup-only: true
-
-  probe-macos-intel:
-    name: "Probe: macos-15-intel / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: macos-15-intel
-    outputs:
-      cache-hit: ${{ steps.probe.outputs.cache-hit }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 1
-      - id: probe
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-intel-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-          lookup-only: true
-
-  probe-rocky8-app:
-    name: "Probe: rocky8 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubuntu-24.04
-    outputs:
-      cache-hit: ${{ steps.probe.outputs.cache-hit }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 1
-      - id: probe
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-          lookup-only: true
-
-  probe-rocky8-hpc:
-    name: "Probe: rocky8 / qt6 / HPC"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubuntu-24.04
-    outputs:
-      cache-hit: ${{ steps.probe.outputs.cache-hit }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 1
-      - id: probe
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
-          lookup-only: true
-
-  # =========================================================================
-  # PHASE 2 — CONDITIONAL WARM
-  # Fires only when has_changes is true AND at least one probe missed.
-  # Gating on has_changes prevents the skipped-probe empty-output false-positive
-  # where '' != 'true' evaluates true for all six conditions.
-  # =========================================================================
-
-  warm-if-needed:
-    name: "Warm caches (if any miss)"
-    needs:
-      - check-changes
-      - probe-ubuntu-app
-      - probe-ubuntu-hpc
-      - probe-macos-arm
-      - probe-macos-intel
-      - probe-rocky8-app
-      - probe-rocky8-hpc
-    if: |
-      needs.check-changes.outputs.has_changes == 'true' && (
-        needs.probe-ubuntu-app.outputs.cache-hit   != 'true' ||
-        needs.probe-ubuntu-hpc.outputs.cache-hit   != 'true' ||
-        needs.probe-macos-arm.outputs.cache-hit    != 'true' ||
-        needs.probe-macos-intel.outputs.cache-hit  != 'true' ||
-        needs.probe-rocky8-app.outputs.cache-hit   != 'true' ||
-        needs.probe-rocky8-hpc.outputs.cache-hit   != 'true'
-      )
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
+  ubuntu:
+    name: "Ubuntu 24.04 (APP + HPC)"
+    uses: ./.github/workflows/nightly-ubuntu.yml
     with:
-      ref:        main
-      platforms:  all
-      qt_variant: qt6
+      ref:                     main
+      clean_tier:              incremental
+      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
+      artifact_retention_days: 3
     secrets: inherit
 
-  # =========================================================================
-  # PHASE 3 — BUILDS
-  # Gated on has_changes so they don't run when warm-if-needed was skipped
-  # due to no changes (skipped jobs still satisfy !cancelled()).
-  # =========================================================================
-
-  macos-arm-app:
-    name: "macOS ARM APP (macos-15, qt6)"
-    needs:
-      - check-changes
-      - warm-if-needed
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+  rocky8:
+    name: "Rocky Linux 8 x64 (APP + HPC)"
+    needs: ubuntu
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/nightly-rocky8.yml
     with:
       ref:                     main
-      runner:                  macos-15
-      qt_variant:              qt6
-      profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
       artifact_retention_days: 3
+    secrets: inherit
 
-  macos-intel-app:
-    name: "macOS Intel APP (macos-15-intel, qt6)"
-    needs:
-      - check-changes
-      - warm-if-needed
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+  macos-arm:
+    name: "macOS ARM (APP)"
+    needs: rocky8
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/nightly-macos-arm.yml
     with:
       ref:                     main
-      runner:                  macos-15-intel
-      qt_variant:              qt6
-      profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
       artifact_retention_days: 3
+    secrets: inherit
 
-  windows-app:
-    name: "Windows x64 APP (windows-2022, qt6)"
-    needs:
-      - check-changes
-      - warm-if-needed
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+  macos-intel:
+    name: "macOS Intel (APP)"
+    needs: macos-arm
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/nightly-macos-intel.yml
     with:
       ref:                     main
-      runner:                  windows-2022
-      qt_variant:              qt6
-      profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
       artifact_retention_days: 3
+    secrets: inherit
 
-  ubuntu-app:
-    name: "Linux x64 APP (ubuntu-24.04, qt6)"
-    needs:
-      - check-changes
-      - warm-if-needed
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+  windows:
+    name: "Windows x64 (APP)"
+    needs: macos-intel
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/nightly-windows.yml
     with:
       ref:                     main
-      runner:                  ubuntu-24.04
-      qt_variant:              qt6
-      profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
       artifact_retention_days: 3
-
-  ubuntu-hpc:
-    name: "Linux x64 HPC (ubuntu-24.04, qt6)"
-    needs:
-      - check-changes
-      - warm-if-needed
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
-    with:
-      ref:                     main
-      runner:                  ubuntu-24.04
-      qt_variant:              qt6
-      profile:                 HPC
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-HPC-qt6', github.run_id) }}
-      artifact_retention_days: 3
-
-  rocky8-app:
-    name: "Rocky Linux 8 x64 APP (qt6)"
-    needs:
-      - check-changes
-      - warm-if-needed
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
-    with:
-      ref:                     main
-      runner:                  ubuntu-24.04
-      cache_os_label:          rocky8
-      qt_variant:              qt6
-      profile:                 APP
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-APP-qt6', github.run_id) }}
-      artifact_retention_days: 3
-
-  rocky8-hpc:
-    name: "Rocky Linux 8 x64 HPC (qt6)"
-    needs:
-      - check-changes
-      - warm-if-needed
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
-    with:
-      ref:                     main
-      runner:                  ubuntu-24.04
-      cache_os_label:          rocky8
-      qt_variant:              qt6
-      profile:                 HPC
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}-HPC-qt6', github.run_id) }}
-      artifact_retention_days: 3
+    secrets: inherit
 
   # =========================================================================
   # PHASE 4 — PUBLISH RELEASE
