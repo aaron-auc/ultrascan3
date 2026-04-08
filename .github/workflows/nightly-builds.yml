@@ -17,16 +17,25 @@ permissions:
 jobs:
 
   # =========================================================================
-  # PLATFORM BUILDS — serialized to avoid simultaneous warm cache writes
-  # exhausting the 10 GB Actions cache quota.
+  # PLATFORM BUILDS — two parallel groups to reduce wall time while keeping
+  # peak cache usage under the 10 GB Actions quota.
   #
-  # Each platform workflow owns its own probe → warm → build chain.
-  # Running them one after the other ensures only one platform's intermediate
-  # stage caches exist at a time, and the warm cleanup job has time to delete
-  # them before the next platform starts.
+  # Each platform workflow owns its own probe → warm → build chain using
+  # isolated key namespaces (vcpkg-ubuntu-24.04-*, vcpkg-macos-15-*, etc.),
+  # so parallel runs do not contend on cache keys.
   #
-  # Order: ubuntu → rocky8 → macos-arm → macos-intel → windows
+  # Group 1 (parallel): ubuntu + macos-arm
+  #   Combined final keys ~3.9 GB; ubuntu intermediates are small.
+  #   Peak well within quota while both warm pipelines overlap.
+  #
+  # Group 2 (parallel, after group 1): rocky8 + macos-intel
+  #   Group 1 intermediates are cleaned up before group 2 starts.
+  #   rocky8 is small; intel final key ~1 GB.
+  #
+  # Group 3 (after group 2): windows
   # =========================================================================
+
+  # --- Group 1 (parallel) ---------------------------------------------------
 
   ubuntu:
     name: "Ubuntu 24.04 (APP + HPC)"
@@ -38,9 +47,21 @@ jobs:
       artifact_retention_days: 3
     secrets: inherit
 
+  macos-arm:
+    name: "macOS ARM (APP)"
+    uses: ./.github/workflows/nightly-macos-arm.yml
+    with:
+      ref:                     main
+      clean_tier:              incremental
+      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
+      artifact_retention_days: 3
+    secrets: inherit
+
+  # --- Group 2 (parallel, after group 1) ------------------------------------
+
   rocky8:
     name: "Rocky Linux 8 x64 (APP + HPC)"
-    needs: ubuntu
+    needs: [ubuntu, macos-arm]
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/nightly-rocky8.yml
     with:
@@ -50,21 +71,9 @@ jobs:
       artifact_retention_days: 3
     secrets: inherit
 
-  macos-arm:
-    name: "macOS ARM (APP)"
-    needs: rocky8
-    if: ${{ !cancelled() }}
-    uses: ./.github/workflows/nightly-macos-arm.yml
-    with:
-      ref:                     main
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
-      artifact_retention_days: 3
-    secrets: inherit
-
   macos-intel:
     name: "macOS Intel (APP)"
-    needs: macos-arm
+    needs: [ubuntu, macos-arm]
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/nightly-macos-intel.yml
     with:
@@ -74,9 +83,11 @@ jobs:
       artifact_retention_days: 3
     secrets: inherit
 
+  # --- Group 3 (after group 2) -----------------------------------------------
+
   windows:
     name: "Windows x64 (APP)"
-    needs: macos-intel
+    needs: [rocky8, macos-intel]
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/nightly-windows.yml
     with:
