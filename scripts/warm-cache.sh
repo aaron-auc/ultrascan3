@@ -206,6 +206,8 @@ if [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ]; then
       US3_SCRATCH_ROOT="$HOME/us3-scratch"
     fi
   fi
+  sudo mkdir -p "$US3_SCRATCH_ROOT"
+  sudo chown "$(id -u):$(id -g)" "$US3_SCRATCH_ROOT"
   mkdir -p "$US3_SCRATCH_ROOT"/{vcpkg-cache,vcpkg-downloads,build}
   echo "Using Linux scratch root: $US3_SCRATCH_ROOT"
 fi
