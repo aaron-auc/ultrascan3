@@ -21,9 +21,6 @@ run-name: >-
     || format('Manual Windows by @{0}', github.actor) }}
 
 on:
-  schedule:
-    - cron: "0 4 * * *"
-
   workflow_dispatch:
     inputs:
       ref:

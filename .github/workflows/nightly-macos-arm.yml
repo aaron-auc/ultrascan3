@@ -20,9 +20,6 @@ run-name: >-
     || format('Manual macOS ARM by @{0}', github.actor) }}
 
 on:
-  schedule:
-    - cron: "0 4 * * *"
-
   workflow_dispatch:
     inputs:
       ref:
@@ -112,7 +109,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-macos-15-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           lookup-only: true
 
   # --------------------------------------------------------------------------
