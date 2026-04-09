@@ -165,7 +165,7 @@ jobs:
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
-      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-rocky8-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-rocky8-{0}', github.run_id) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
 
   build-hpc:
@@ -180,5 +180,5 @@ jobs:
       qt_variant:              qt6
       profile:                 HPC
       clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
-      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-rocky8-{0}-HPC-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ format('{0}-HPC', inputs.artifact_name_prefix || format('nightly-rocky8-{0}', github.run_id)) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}

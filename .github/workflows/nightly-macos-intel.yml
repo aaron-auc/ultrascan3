@@ -143,5 +143,5 @@ jobs:
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
-      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-macos-intel-{0}-APP-qt6', github.run_id) }}
+      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-{0}', github.run_id) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
