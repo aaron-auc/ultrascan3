@@ -195,7 +195,8 @@ if [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ]; then
   echo "=========================================="
   df -h
   echo "Freeing large preinstalled tool stacks..."
-  sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+  SUDO=""; [ "$(id -u)" != "0" ] && SUDO="sudo"
+  $SUDO rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
   echo "Disk after cleanup:"
   df -h
 
@@ -206,8 +207,8 @@ if [ "$PLATFORM" = "Linux" ] && [ "${CI:-false}" = "true" ]; then
       US3_SCRATCH_ROOT="$HOME/us3-scratch"
     fi
   fi
-  sudo mkdir -p "$US3_SCRATCH_ROOT"
-  sudo chown "$(id -u):$(id -g)" "$US3_SCRATCH_ROOT"
+  $SUDO mkdir -p "$US3_SCRATCH_ROOT"
+  $SUDO chown "$(id -u):$(id -g)" "$US3_SCRATCH_ROOT"
   mkdir -p "$US3_SCRATCH_ROOT"/{vcpkg-cache,vcpkg-downloads,build}
   echo "Using Linux scratch root: $US3_SCRATCH_ROOT"
 fi

@@ -266,10 +266,11 @@ if [ "$PLATFORM" = "Linux" ]; then
 
   if [ "${CI:-false}" = "true" ]; then
     echo "Freeing large preinstalled tool stacks not needed for UltraScan..."
-    sudo rm -rf /usr/share/dotnet || true
-    sudo rm -rf /opt/ghc || true
-    sudo rm -rf /usr/local/lib/android || true
-    sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+    SUDO=""; [ "$(id -u)" != "0" ] && SUDO="sudo"
+    $SUDO rm -rf /usr/share/dotnet || true
+    $SUDO rm -rf /opt/ghc || true
+    $SUDO rm -rf /usr/local/lib/android || true
+    $SUDO rm -rf /opt/hostedtoolcache/CodeQL || true
     echo ""
     echo "Disk after cleanup:"
     df -h
