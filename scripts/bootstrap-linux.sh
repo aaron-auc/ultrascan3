@@ -157,8 +157,11 @@ log ""
 # code.  The logical groups (TOOLCHAIN, AUTOTOOLS, etc.) are identical across
 # families — only the package names differ.
 #
-# RHEL/Rocky notes:
-#   - ninja-build, patchelf, autoconf-archive are in EPEL (enabled below).
+# RHEL/Rocky/OL8 notes:
+#   - ninja-build, patchelf, nasm are in EPEL (enabled below).
+#   - autoconf-archive is in EPEL on Rocky/RHEL but NOT on Oracle Linux 8.
+#   - On Oracle Linux 8, EPEL is enabled via oracle-epel-release-el8.
+#   - On Oracle Linux 8, CRB is named ol8_codeready_builder.
 #   - Many -devel packages live in the CRB/PowerTools repo (enabled below).
 #   - The RHEL xcb packages are split differently from Debian but cover the
 #     same XCB headers that vcpkg qtbase requires.
@@ -375,16 +378,20 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   )
 
   # --- Autotools chain ------------------------------------------------------
-  # Same logical role as on Debian. autoconf-archive is in EPEL.
+  # Same logical role as on Debian. autoconf-archive is in EPEL on Rocky/RHEL
+  # but NOT available on Oracle Linux 8 — omitted there; vcpkg has internal
+  # fallbacks for the m4 macros it needs.
   # libtool-ltdl-devel: the RHEL equivalent of Debian's libltdl-dev —
   #   provides ltdl.h required by ports that call LT_LIB_DLLOAD in configure.ac
   PKGS_AUTOTOOLS=(
     autoconf
-    autoconf-archive
     automake
     libtool
     libtool-ltdl-devel
   )
+  if [ "$OS_ID" != "ol" ]; then
+    PKGS_AUTOTOOLS+=(autoconf-archive)
+  fi
 
   # --- Archive and download utilities ---------------------------------------
   # Same role as on Debian. All available in BaseOS/AppStream.
@@ -680,8 +687,13 @@ if [ "$DISTRO_FAMILY" = "debian" ]; then
 elif [ "$DISTRO_FAMILY" = "rhel" ]; then
 
   # Enable EPEL — provides ninja-build, patchelf, nasm, autoconf-archive
+  # On Oracle Linux 8 the EPEL release package has a different name.
   log "Enabling EPEL repository..."
-  ${SUDO:+$SUDO} dnf install -y epel-release
+  if [ "$OS_ID" = "ol" ]; then
+    ${SUDO:+$SUDO} dnf install -y oracle-epel-release-el8
+  else
+    ${SUDO:+$SUDO} dnf install -y epel-release
+  fi
 
   # Enable CRB (CodeReady Builder) — provides mesa-*-devel, xcb-util-*,
   # libxkbcommon-*-devel, harfbuzz-devel, wayland-*-devel, and others.
