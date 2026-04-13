@@ -30,6 +30,7 @@
 #   Debian 12 (Bookworm)
 #   Rocky Linux 8
 #   AlmaLinux 8
+#   Oracle Linux 8
 #   RHEL 8
 #
 # macOS is intentionally out of scope: Homebrew and Xcode are developer
@@ -528,11 +529,16 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
 
   # --- Input / multimedia device headers ------------------------------------
   # libinput-devel: RHEL equivalent of libinput-dev
+  #   NOTE: not available on Oracle Linux 8 (absent from BaseOS/AppStream/EPEL/CRB).
+  #   Omitted on OL8; Qt builds without it by falling back to evdev input.
   # systemd-devel: provides libudev.h — RHEL equivalent of libudev-dev
   # alsa-lib-devel: ALSA audio — RHEL equivalent of libasound2-dev
   # pulseaudio-libs-devel: PulseAudio — RHEL equivalent of libpulse-dev
-  PKGS_INPUT=(
-    libinput-devel
+  PKGS_INPUT=()
+  if [ "$OS_ID" != "ol" ]; then
+    PKGS_INPUT+=(libinput-devel)
+  fi
+  PKGS_INPUT+=(
     systemd-devel
     alsa-lib-devel
     pulseaudio-libs-devel
@@ -679,14 +685,22 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
 
   # Enable CRB (CodeReady Builder) — provides mesa-*-devel, xcb-util-*,
   # libxkbcommon-*-devel, harfbuzz-devel, wayland-*-devel, and others.
-  # The repo name changed between minor Rocky 8 releases:
-  #   Rocky 8.5 and earlier: powertools
-  #   Rocky 8.6 and later:   crb
-  # Try crb first, fall back to powertools silently.
+  # Repo name varies by distro and version:
+  #   Rocky 8.5 and earlier:  powertools
+  #   Rocky 8.6 and later:    crb
+  #   Oracle Linux 8:         ol8_codeready_builder
+  # Try each name in turn; warn but continue if none succeed.
   log "Enabling CRB/PowerTools repository..."
-  if ! ${SUDO:+$SUDO} dnf config-manager --set-enabled crb 2>/dev/null; then
-    ${SUDO:+$SUDO} dnf config-manager --set-enabled powertools 2>/dev/null || \
-      warn "Could not enable CRB or PowerTools repo. Some packages may not be available."
+  CRB_ENABLED=false
+  for crb_name in crb ol8_codeready_builder powertools; do
+    if ${SUDO:+$SUDO} dnf config-manager --set-enabled "$crb_name" 2>/dev/null; then
+      log "Enabled repo: $crb_name"
+      CRB_ENABLED=true
+      break
+    fi
+  done
+  if [ "$CRB_ENABLED" = false ]; then
+    warn "Could not enable CRB/PowerTools/ol8_codeready_builder repo. Some packages may not be available."
   fi
 
   log "Installing packages..."
