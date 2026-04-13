@@ -8,10 +8,8 @@ name: Nightly — Rocky Linux 8
 # Manual:    workflow_dispatch on this file
 # ============================================================================
 #
-# Cache isolation strategy:
-#   Probe + warm are scoped to rocky8 keys only.
-#   A miss here does NOT trigger warming on any other platform.
-#   The warm job is skipped when probe jobs were skipped (no changes).
+# Change detection is handled by the caller (nightly-builds.yml) for
+# scheduled runs. workflow_dispatch on this file always proceeds.
 
 run-name: >-
   ${{ github.event_name == 'schedule'
@@ -67,37 +65,10 @@ permissions:
 jobs:
 
   # --------------------------------------------------------------------------
-  # PHASE 0 — CHANGE DETECTION
-  # Probe jobs run on ubuntu-24.04 (Rocky key lookup doesn't require the container).
-  # --------------------------------------------------------------------------
-  check-changes:
-    name: "Check for changes in last 24h"
-    runs-on: ubuntu-24.04
-    outputs:
-      has_changes: ${{ steps.detect.outputs.has_changes }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref || 'main' }}
-          fetch-depth: 0
-      - id: detect
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" != "schedule" ]]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          COUNT=$(git log --oneline --since="24 hours ago" origin/main | wc -l | tr -d ' ')
-          echo "Commits in last 24h: $COUNT"
-          echo "has_changes=$( [[ $COUNT -gt 0 ]] && echo true || echo false )" >> "$GITHUB_OUTPUT"
-
-  # --------------------------------------------------------------------------
   # PHASE 1 — CACHE PROBES  (rocky8-specific keys, no container needed)
   # --------------------------------------------------------------------------
   probe-app:
     name: "Probe: rocky8 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -115,8 +86,6 @@ jobs:
 
   probe-hpc:
     name: "Probe: rocky8 / qt6 / HPC"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -137,12 +106,10 @@ jobs:
   # --------------------------------------------------------------------------
   warm-if-needed:
     name: "Warm rocky8 caches (if any miss)"
-    needs: [check-changes, probe-app, probe-hpc]
+    needs: [probe-app, probe-hpc]
     if: |
-      needs.check-changes.outputs.has_changes == 'true' && (
-        needs.probe-app.outputs.cache-hit != 'true' ||
-        needs.probe-hpc.outputs.cache-hit != 'true'
-      )
+      needs.probe-app.outputs.cache-hit != 'true' ||
+      needs.probe-hpc.outputs.cache-hit != 'true'
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
     with:
       ref:        ${{ inputs.ref || 'main' }}
@@ -155,8 +122,8 @@ jobs:
   # --------------------------------------------------------------------------
   build-app:
     name: "Rocky8 APP (qt6)"
-    needs: [check-changes, warm-if-needed]
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
+    needs: [probe-app, probe-hpc, warm-if-needed]
+    if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref || 'main' }}
@@ -170,8 +137,8 @@ jobs:
 
   build-hpc:
     name: "Rocky8 HPC (qt6)"
-    needs: [check-changes, warm-if-needed]
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
+    needs: [probe-app, probe-hpc, warm-if-needed]
+    if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref || 'main' }}

@@ -13,11 +13,8 @@ name: Nightly — Ubuntu
 #   A miss on ubuntu does NOT trigger warming for any other platform.
 #   The warm job is skipped when the probe job itself was skipped.
 #
-# Gate logic (schedule):
-#   check-changes detects commits in the last 24h on main.
-#   All downstream jobs require has_changes == 'true'.
-#   workflow_dispatch bypasses the 24h check (always proceeds).
-#   workflow_call bypasses the 24h check (release always proceeds).
+# Change detection is handled by the caller (nightly-builds.yml) for
+# scheduled runs. workflow_dispatch on this file always proceeds.
 
 run-name: >-
   ${{ github.event_name == 'schedule'
@@ -86,37 +83,10 @@ env:
 jobs:
 
   # --------------------------------------------------------------------------
-  # PHASE 0 — CHANGE DETECTION  (schedule only)
-  # --------------------------------------------------------------------------
-  check-changes:
-    name: "Check for changes in last 24h"
-    runs-on: ubuntu-24.04
-    outputs:
-      has_changes: ${{ steps.detect.outputs.has_changes }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ env._REF }}
-          fetch-depth: 0
-      - name: Detect commits in last 24 hours
-        id: detect
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" != "schedule" ]]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          COUNT=$(git log --oneline --since="24 hours ago" origin/main | wc -l | tr -d ' ')
-          echo "Commits in last 24h: $COUNT"
-          echo "has_changes=$( [[ $COUNT -gt 0 ]] && echo true || echo false )" >> "$GITHUB_OUTPUT"
-
-  # --------------------------------------------------------------------------
   # PHASE 1 — CACHE PROBES  (ubuntu-only keys)
   # --------------------------------------------------------------------------
   probe-app:
     name: "Probe: ubuntu-24.04 / qt6 / APP"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -134,8 +104,6 @@ jobs:
 
   probe-hpc:
     name: "Probe: ubuntu-24.04 / qt6 / HPC"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -159,12 +127,10 @@ jobs:
   # --------------------------------------------------------------------------
   warm-if-needed:
     name: "Warm ubuntu caches (if any miss)"
-    needs: [check-changes, probe-app, probe-hpc]
+    needs: [probe-app, probe-hpc]
     if: |
-      needs.check-changes.outputs.has_changes == 'true' && (
-        needs.probe-app.outputs.cache-hit != 'true' ||
-        needs.probe-hpc.outputs.cache-hit != 'true'
-      )
+      needs.probe-app.outputs.cache-hit != 'true' ||
+      needs.probe-hpc.outputs.cache-hit != 'true'
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
     with:
       ref:        ${{ inputs.ref || 'main' }}
@@ -177,8 +143,8 @@ jobs:
   # --------------------------------------------------------------------------
   build-app:
     name: "Ubuntu APP (ubuntu-24.04, qt6)"
-    needs: [check-changes, warm-if-needed]
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
+    needs: [probe-app, probe-hpc, warm-if-needed]
+    if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref || 'main' }}
@@ -191,8 +157,8 @@ jobs:
 
   build-hpc:
     name: "Ubuntu HPC (ubuntu-24.04, qt6)"
-    needs: [check-changes, warm-if-needed]
-    if: ${{ !cancelled() && needs.check-changes.outputs.has_changes == 'true' }}
+    needs: [probe-app, probe-hpc, warm-if-needed]
+    if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref || 'main' }}

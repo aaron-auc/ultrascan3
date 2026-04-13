@@ -17,6 +17,34 @@ permissions:
 jobs:
 
   # =========================================================================
+  # PHASE 0 — CHANGE DETECTION
+  # Single authoritative gate for the entire nightly run.
+  # All platform jobs and publish-release are conditioned on this output.
+  # workflow_dispatch always proceeds (has_changes=true).
+  # =========================================================================
+  check-changes:
+    name: "Check for changes in last 24h"
+    runs-on: ubuntu-24.04
+    outputs:
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Detect commits in last 24 hours
+        id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COUNT=$(git log --oneline --since="24 hours ago" origin/main | wc -l | tr -d ' ')
+          echo "Commits in last 24h: $COUNT"
+          echo "has_changes=$( [[ $COUNT -gt 0 ]] && echo true || echo false )" >> "$GITHUB_OUTPUT"
+
+  # =========================================================================
   # PLATFORM BUILDS — two parallel groups to reduce wall time while keeping
   # peak cache usage under the 10 GB Actions quota.
   #
@@ -39,6 +67,8 @@ jobs:
 
   ubuntu:
     name: "Ubuntu 24.04 (APP + HPC)"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     uses: ./.github/workflows/nightly-ubuntu.yml
     with:
       ref:                     main
@@ -49,6 +79,8 @@ jobs:
 
   macos-arm:
     name: "macOS ARM (APP)"
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     uses: ./.github/workflows/nightly-macos-arm.yml
     with:
       ref:                     main
@@ -61,8 +93,8 @@ jobs:
 
   rocky8:
     name: "Rocky Linux 8 x64 (APP + HPC)"
-    needs: [ubuntu, macos-arm]
-    if: ${{ !cancelled() }}
+    needs: [check-changes, ubuntu, macos-arm]
+    if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
     uses: ./.github/workflows/nightly-rocky8.yml
     with:
       ref:                     main
@@ -73,8 +105,8 @@ jobs:
 
   macos-intel:
     name: "macOS Intel (APP)"
-    needs: [ubuntu, macos-arm]
-    if: ${{ !cancelled() }}
+    needs: [check-changes, ubuntu, macos-arm]
+    if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
     uses: ./.github/workflows/nightly-macos-intel.yml
     with:
       ref:                     main
@@ -87,8 +119,8 @@ jobs:
 
   windows:
     name: "Windows x64 (APP)"
-    needs: [rocky8, macos-intel]
-    if: ${{ !cancelled() }}
+    needs: [check-changes, rocky8, macos-intel]
+    if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
     uses: ./.github/workflows/nightly-windows.yml
     with:
       ref:                     main
@@ -108,12 +140,13 @@ jobs:
   publish-release:
     name: "Publish nightly release"
     needs:
+      - check-changes
       - ubuntu
       - rocky8
       - macos-arm
       - macos-intel
       - windows
-    if: success()
+    if: needs.check-changes.outputs.has_changes == 'true' && success()
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
