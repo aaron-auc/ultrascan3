@@ -56,9 +56,9 @@ jobs:
   #   Combined final keys ~3.9 GB; ubuntu intermediates are small.
   #   Peak well within quota while both warm pipelines overlap.
   #
-  # Group 2 (parallel, after group 1): rocky8 + macos-intel
+  # Group 2 (parallel, after group 1): oraclelinux8 + macos-intel
   #   Group 1 intermediates are cleaned up before group 2 starts.
-  #   rocky8 is small; intel final key ~1 GB.
+  #   oraclelinux8 is small; intel final key ~1 GB.
   #
   # Group 3 (after group 2): windows
   # =========================================================================
@@ -91,11 +91,11 @@ jobs:
 
   # --- Group 2 (parallel, after group 1) ------------------------------------
 
-  rocky8:
-    name: "Rocky Linux 8 x64 (APP + HPC)"
+  oraclelinux8:
+    name: "Oracle Linux 8 x64 (APP + HPC)"
     needs: [check-changes, ubuntu, macos-arm]
     if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
-    uses: ./.github/workflows/nightly-rocky8.yml
+    uses: ./.github/workflows/nightly-oraclelinux8.yml
     with:
       ref:                     main
       clean_tier:              incremental
@@ -119,7 +119,7 @@ jobs:
 
   windows:
     name: "Windows x64 (APP)"
-    needs: [check-changes, rocky8, macos-intel]
+    needs: [check-changes, oraclelinux8, macos-intel]
     if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
     uses: ./.github/workflows/nightly-windows.yml
     with:
@@ -142,7 +142,7 @@ jobs:
     needs:
       - check-changes
       - ubuntu
-      - rocky8
+      - oraclelinux8
       - macos-arm
       - macos-intel
       - windows
@@ -182,8 +182,8 @@ jobs:
           cp_first "artifacts/nightly-*-windows-2022-*/UltraScan3-*-Windows.exe"   "UltraScan3-APP-windows-x64.exe"
           cp_first "artifacts/nightly-*-ubuntu-24.04-[0-9]*/UltraScan3-*-Linux-*.tar.gz"     "UltraScan3-APP-linux-x64.tar.gz"
           cp_first "artifacts/nightly-*-HPC-ubuntu-24.04-[0-9]*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-HPC-linux-x64.tar.gz"
-          cp_first "artifacts/nightly-*-rocky8-[0-9]*/UltraScan3-*-Linux-*.tar.gz"            "UltraScan3-APP-rocky8-x64.tar.gz"
-          cp_first "artifacts/nightly-*-HPC-rocky8-[0-9]*/UltraScan3-*-Linux-*.tar.gz"       "UltraScan3-HPC-rocky8-x64.tar.gz"
+          cp_first "artifacts/nightly-*-oraclelinux8-[0-9]*/UltraScan3-*-Linux-*.tar.gz"       "UltraScan3-APP-oraclelinux8-x64.tar.gz"
+          cp_first "artifacts/nightly-*-HPC-oraclelinux8-[0-9]*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-HPC-oraclelinux8-x64.tar.gz"
 
           echo "Assets ready:"
           ls -lh release-assets/
@@ -213,8 +213,8 @@ jobs:
           | \`UltraScan3-APP-windows-x64.exe\`  | Windows x64               | Desktop |
           | \`UltraScan3-APP-linux-x64.tar.gz\` | Ubuntu 24.04 x64          | Desktop |
           | \`UltraScan3-HPC-linux-x64.tar.gz\` | Ubuntu 24.04 x64          | HPC/MPI |
-          | \`UltraScan3-APP-rocky8-x64.tar.gz\`| Rocky Linux 8 x64         | Desktop |
-          | \`UltraScan3-HPC-rocky8-x64.tar.gz\`| Rocky Linux 8 x64         | HPC/MPI |"
+          | \`UltraScan3-APP-oraclelinux8-x64.tar.gz\`| Oracle Linux 8 x64        | Desktop |
+          | \`UltraScan3-HPC-oraclelinux8-x64.tar.gz\`| Oracle Linux 8 x64        | HPC/MPI |"
 
           # Delete existing nightly release and tag if present
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true

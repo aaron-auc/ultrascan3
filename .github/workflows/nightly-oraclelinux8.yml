@@ -1,10 +1,10 @@
-name: Nightly — Rocky Linux 8
+name: Nightly — Oracle Linux 8
 
 # ============================================================================
-# Platform: Rocky Linux 8 x64 (rockylinux:8 container on ubuntu-24.04)
+# Platform: Oracle Linux 8.10 x64 (oraclelinux:8 container on ubuntu-24.04)
 # Profiles:  APP + HPC
 # Schedule:  nightly (selected platform)
-# Release:   called by release.yml via workflow_call
+# Release:   called by nightly-builds.yml via workflow_call
 # Manual:    workflow_dispatch on this file
 # ============================================================================
 #
@@ -13,10 +13,10 @@ name: Nightly — Rocky Linux 8
 
 run-name: >-
   ${{ github.event_name == 'schedule'
-    && format('Nightly Rocky8 [{0}]', github.run_started_at)
+    && format('Nightly OracleLinux8 [{0}]', github.run_started_at)
     || github.event_name == 'workflow_call'
-    && format('Release Rocky8 [{0}]', inputs.ref)
-    || format('Manual Rocky8 by @{0}', github.actor) }}
+    && format('Release OracleLinux8 [{0}]', inputs.ref)
+    || format('Manual OracleLinux8 by @{0}', github.actor) }}
 
 on:
   workflow_dispatch:
@@ -65,10 +65,10 @@ permissions:
 jobs:
 
   # --------------------------------------------------------------------------
-  # PHASE 1 — CACHE PROBES  (rocky8-specific keys, no container needed)
+  # PHASE 1 — CACHE PROBES  (oraclelinux8-specific keys, no container needed)
   # --------------------------------------------------------------------------
   probe-app:
-    name: "Probe: rocky8 / qt6 / APP"
+    name: "Probe: oraclelinux8 / qt6 / APP"
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -81,11 +81,11 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           lookup-only: true
 
   probe-hpc:
-    name: "Probe: rocky8 / qt6 / HPC"
+    name: "Probe: oraclelinux8 / qt6 / HPC"
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -98,14 +98,14 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/us3-vcpkg-cache
-          key: vcpkg-rocky8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
+          key: vcpkg-oraclelinux8-qt6-HPC-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'buildsys/vcpkg/overlay-ports/**', 'scripts/warm-cache.sh') }}
           lookup-only: true
 
   # --------------------------------------------------------------------------
-  # PHASE 2 — CONDITIONAL WARM  (rocky8 platform only)
+  # PHASE 2 — CONDITIONAL WARM  (oraclelinux8 platform only)
   # --------------------------------------------------------------------------
   warm-if-needed:
-    name: "Warm rocky8 caches (if any miss)"
+    name: "Warm oraclelinux8 caches (if any miss)"
     needs: [probe-app, probe-hpc]
     if: |
       needs.probe-app.outputs.cache-hit != 'true' ||
@@ -113,7 +113,7 @@ jobs:
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@main
     with:
       ref:        ${{ inputs.ref || 'main' }}
-      platforms:  "rocky8-x64"
+      platforms:  "oraclelinux8-x64"
       qt_variant: qt6
     secrets: inherit
 
@@ -121,31 +121,31 @@ jobs:
   # PHASE 3 — BUILDS
   # --------------------------------------------------------------------------
   build-app:
-    name: "Rocky8 APP (qt6)"
+    name: "OracleLinux8 APP (qt6)"
     needs: [probe-app, probe-hpc, warm-if-needed]
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
-      cache_os_label:          rocky8
+      cache_os_label:          oraclelinux8
       qt_variant:              qt6
       profile:                 APP
       clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
-      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-rocky8-{0}', github.run_id) }}
+      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-oraclelinux8-{0}', github.run_id) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
 
   build-hpc:
-    name: "Rocky8 HPC (qt6)"
+    name: "OracleLinux8 HPC (qt6)"
     needs: [probe-app, probe-hpc, warm-if-needed]
     if: ${{ !cancelled() }}
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
-      cache_os_label:          rocky8
+      cache_os_label:          oraclelinux8
       qt_variant:              qt6
       profile:                 HPC
       clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
-      artifact_name_prefix:    ${{ format('{0}-HPC', inputs.artifact_name_prefix || format('nightly-rocky8-{0}', github.run_id)) }}
+      artifact_name_prefix:    ${{ format('{0}-HPC', inputs.artifact_name_prefix || format('nightly-oraclelinux8-{0}', github.run_id)) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}

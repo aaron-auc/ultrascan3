@@ -112,7 +112,7 @@ case "$OS_ID" in
   ubuntu|debian)
     DISTRO_FAMILY="debian"
     ;;
-  rhel|centos|rocky|almalinux)
+  rhel|centos|rocky|almalinux|ol)
     DISTRO_FAMILY="rhel"
     ;;
   "")
