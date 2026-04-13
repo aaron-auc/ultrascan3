@@ -158,8 +158,7 @@ log ""
 # families — only the package names differ.
 #
 # RHEL/Rocky/OL8 notes:
-#   - ninja-build, patchelf, nasm are in EPEL (enabled below).
-#   - autoconf-archive is in EPEL on Rocky/RHEL but NOT on Oracle Linux 8.
+#   - ninja-build, patchelf, nasm, autoconf-archive are in EPEL (enabled below).
 #   - On Oracle Linux 8, EPEL is enabled via oracle-epel-release-el8.
 #   - On Oracle Linux 8, CRB is named ol8_codeready_builder.
 #   - Many -devel packages live in the CRB/PowerTools repo (enabled below).
@@ -379,19 +378,17 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
 
   # --- Autotools chain ------------------------------------------------------
   # Same logical role as on Debian. autoconf-archive is in EPEL on Rocky/RHEL
-  # but NOT available on Oracle Linux 8 — omitted there; vcpkg has internal
-  # fallbacks for the m4 macros it needs.
+  # and also in Oracle Linux EPEL (oracle-epel-release-el8); it is available
+  # on all supported EL8 variants once EPEL is enabled.
   # libtool-ltdl-devel: the RHEL equivalent of Debian's libltdl-dev —
   #   provides ltdl.h required by ports that call LT_LIB_DLLOAD in configure.ac
   PKGS_AUTOTOOLS=(
     autoconf
+    autoconf-archive
     automake
     libtool
     libtool-ltdl-devel
   )
-  if [ "$OS_ID" != "ol" ]; then
-    PKGS_AUTOTOOLS+=(autoconf-archive)
-  fi
 
   # --- Archive and download utilities ---------------------------------------
   # Same role as on Debian. All available in BaseOS/AppStream.
@@ -751,12 +748,14 @@ fi
 # Rocky/RHEL 8 ships Python 3.6 as the system default, which is too old for
 # vcpkg's meson port (requires >= 3.7).  python39 installs as a parallel
 # alternative at /usr/bin/python3.9.  We register it via update-alternatives
-# with a higher priority than the system 3.6 so that `python3` resolves to 3.9.
-# This is idempotent — re-running with 3.9 already registered is harmless.
+# with priority 100 (higher than any typical system alternative) and then
+# explicitly set it as the current default so the change takes effect
+# immediately in this shell session without relying on priority ordering.
 if [ "$DISTRO_FAMILY" = "rhel" ] && [ -x /usr/bin/python3.9 ]; then
   log "Registering python3.9 as the default python3 via update-alternatives..."
-  ${SUDO:+$SUDO} update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 39
-  log "python3 now resolves to: $(python3 --version 2>&1)"
+  ${SUDO:+$SUDO} update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 100
+  ${SUDO:+$SUDO} update-alternatives --set python3 /usr/bin/python3.9
+  log "python3 now resolves to: $(python3 --version 2>&1) at $(command -v python3)"
 fi
 
 # =============================================================================
@@ -793,7 +792,7 @@ fi
 log ""
 log "Verifying key tools..."
 
-VERIFY_TOOLS=(cmake ninja g++ git autoconf automake nasm gperf bison flex python3)
+VERIFY_TOOLS=(cmake ninja g++ git autoconf autoreconf aclocal automake libtoolize nasm gperf bison flex python3)
 if [ "$INSTALL_HPC" = true ]; then
   VERIFY_TOOLS+=(mpicxx)
 fi
