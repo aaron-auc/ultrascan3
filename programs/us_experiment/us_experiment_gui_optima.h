@@ -68,7 +68,7 @@ class US_ExperGuiGeneral : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_general.html" ); };
+         { showHelp.show_help( "manual/experiment/general.html" ); };
 
       // Detailed information for specific centerpiece
       bool        centpInfo   ( const QString, US_AbstractCenterpiece& );
@@ -172,7 +172,7 @@ class US_ExperGuiRotor : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_rotor.html" ); };
+         { showHelp.show_help( "manual/experiment/rotor.html" ); };
 
       bool message_instr_shown;
       QString runID;
@@ -353,7 +353,7 @@ class US_ExperGuiSpeeds : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_speeds.html" ); };
+         { showHelp.show_help( "manual/experiment/speeds.html" ); };
 
    private:
       US_ExperimentMain*   mainw;
@@ -536,10 +536,11 @@ class US_ExperGuiCells : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_cells.html" ); };
+         { showHelp.show_help( "manual/experiment/cells.html" ); };
 
    private:
       US_ExperimentMain*   mainw;
+      US_RunProtocol::RunProtoRotor* rpRotor;  
       US_RunProtocol::RunProtoCells* rpCells;
       US_Help  showHelp;
       QList< QLabel* >     cc_labls;   // Cell label object pointers
@@ -578,7 +579,7 @@ class US_ExperGuiSolutions : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_solutions.html" ); };
+         { showHelp.show_help( "manual/experiment/solutions.html" ); };
 
       QMap <int, bool> solution_comment_init;
       int      mxrow;                           // Max rows (24)
@@ -658,7 +659,7 @@ class US_ExperGuiOptical : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_photomult.html" ); };
+         { showHelp.show_help( "manual/experiment/optics.html" ); };
 
    private:
       US_ExperimentMain*   mainw;
@@ -702,7 +703,7 @@ class US_ExperGuiRanges : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_photomult.html" ); };
+         { showHelp.show_help( "manual/experiment/range.html" ); };
 
    private:
       US_ExperimentMain*   mainw;
@@ -831,7 +832,7 @@ class US_SelectWavelengths : public US_WidgetsDialog
       void done           ( void );
       void reset          ( void );
       void help           ( void )
-      { showHelp.show_help( "manual/convert-seltrip.html" ); };
+      { showHelp.show_help( "manual/common_dialogs.html#select-to-delete" ); };
 };
 
 
@@ -884,7 +885,7 @@ class US_SelectWavelengths_manual : public US_WidgetsDialog
       void reset          ( void );
       void cancel         ( void );
       void help           ( void ) 
-      { showHelp.show_help( "manual/convert-seltrip.html" ); }; 
+      { showHelp.show_help( "manual/common_dialogs.html#select-to-delete" ); }; 
 };
 
 
@@ -909,7 +910,7 @@ class US_ExperGuiUpload : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_submit.html" ); };
+         { showHelp.show_help( "manual/experiment/submit.html" ); };
 
       QPushButton* pb_saverp;
       QPushButton* pb_connect;      
@@ -1046,7 +1047,7 @@ class US_ExperGuiAProfile : public US_WidgetsDialog
       QStringList sibLValue( const QString, const QString );
       int         status   ( void );
       void        help     ( void )
-         { showHelp.show_help( "manual/experiment_submit.html" ); };
+         { showHelp.show_help( "manual/experiment/submit.html" ); };
 
       QPushButton* pb_saverp;
 

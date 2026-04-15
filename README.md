@@ -1,5 +1,3 @@
-[![Nightly Build](https://github.com/ehb54/ultrascan3/actions/workflows/nightly-builds.yml/badge.svg?branch=main)](https://github.com/ehb54/ultrascan3/actions/workflows/nightly-builds.yml)
-[![Release](https://github.com/ehb54/ultrascan3/actions/workflows/release.yml/badge.svg)](https://github.com/ehb54/ultrascan3/actions/workflows/release.yml)
 [![CodeQL](https://github.com/ehb54/ultrascan3/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/ehb54/ultrascan3/actions/workflows/codeql-analysis.yml)
 
 This is the home of the UltraScan GUI software source code.
@@ -51,3 +49,4 @@ Compile both `us` and `us3_somo` ```cd /ultrascan3 && ./makeall.sh && ./makesomo
 Run the compiled application ```LD_LIBRARY_PATH=/ultrascan3/lib:/qwt-6.1.5/lib /ultrascan3/bin/us```
 
 Note - subprocesses do not currently run in the container, so you must run any compiled application individually, e.g. `us_fematch`
+

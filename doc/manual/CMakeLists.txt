@@ -62,6 +62,7 @@ add_custom_command(
         ${RST_FILES}
         ${STATIC_FILES}
         "${DOC_SOURCE_DIR}/conf.py"
+        "${DOC_SOURCE_DIR}/auto_index.py"
         COMMENT "Building Sphinx qthelp output"
         VERBATIM
 )
@@ -141,7 +142,7 @@ if(QHELPGENERATOR_EXECUTABLE)
                 COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${_QT_RUNTIME_BIN_DIR};${_QT_TOOL_BIN_DIR};$ENV{PATH}"
                 "QT_PLUGIN_PATH=${_QT_PLUGIN_DIR}"
-                ${QHELPGENERATOR_EXECUTABLE} manual.qhp -o manual.qch
+                ${QHELPGENERATOR_EXECUTABLE} ${SPHINX_PROJECT}.qhp -o manual.qch
                 DEPENDS ${SPHINX_QHP}
                 WORKING_DIRECTORY ${DOC_QTHELP_DIR}
                 COMMENT "Compiling Qt help file (manual.qch)"
@@ -150,7 +151,7 @@ if(QHELPGENERATOR_EXECUTABLE)
     else()
         add_custom_command(
                 OUTPUT  ${DOC_QCH_STAGE}
-                COMMAND ${QHELPGENERATOR_EXECUTABLE} manual.qhp -o manual.qch
+                COMMAND ${QHELPGENERATOR_EXECUTABLE} ${SPHINX_PROJECT}.qhp -o manual.qch
                 DEPENDS ${SPHINX_QHP}
                 WORKING_DIRECTORY ${DOC_QTHELP_DIR}
                 COMMENT "Compiling Qt help file (manual.qch)"
@@ -170,7 +171,7 @@ if(QHELPGENERATOR_EXECUTABLE)
                 COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${_QT_RUNTIME_BIN_DIR};${_QT_TOOL_BIN_DIR};$ENV{PATH}"
                 "QT_PLUGIN_PATH=${_QT_PLUGIN_DIR}"
-                ${QHELPGENERATOR_EXECUTABLE} manual.qhcp -o manual.qhc
+                ${QHELPGENERATOR_EXECUTABLE} ${SPHINX_PROJECT}.qhcp -o manual.qhc
                 DEPENDS ${SPHINX_QHCP} ${DOC_QCH_STAGE}
                 WORKING_DIRECTORY ${DOC_QTHELP_DIR}
                 COMMENT "Compiling Qt help collection (manual.qhc)"
@@ -179,7 +180,7 @@ if(QHELPGENERATOR_EXECUTABLE)
     else()
         add_custom_command(
                 OUTPUT  ${DOC_QHC_STAGE}
-                COMMAND ${QHELPGENERATOR_EXECUTABLE} manual.qhcp -o manual.qhc
+                COMMAND ${QHELPGENERATOR_EXECUTABLE} ${SPHINX_PROJECT}.qhcp -o manual.qhc
                 DEPENDS ${SPHINX_QHCP} ${DOC_QCH_STAGE}
                 WORKING_DIRECTORY ${DOC_QTHELP_DIR}
                 COMMENT "Compiling Qt help collection (manual.qhc)"
