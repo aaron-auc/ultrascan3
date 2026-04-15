@@ -32,8 +32,8 @@ on:
           - macos-arm
           - macos-intel
           - windows
-          - rocky8
-          - linux          # ubuntu + rocky8
+          - oraclelinux8
+          - linux          # ubuntu + oraclelinux8
           - macos          # macos-arm + macos-intel
 
       clean_tier:
@@ -115,13 +115,13 @@ jobs:
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
     secrets: inherit
 
-  rocky8:
-    name: "Rocky Linux 8 x64 (APP + HPC)"
+  oraclelinux8:
+    name: "Oracle Linux 8 x64 (APP + HPC)"
     if: |
-      inputs.platforms == 'all'    ||
-      inputs.platforms == 'rocky8' ||
+      inputs.platforms == 'all'         ||
+      inputs.platforms == 'oraclelinux8' ||
       inputs.platforms == 'linux'
-    uses: ./.github/workflows/nightly-rocky8.yml
+    uses: ./.github/workflows/nightly-oraclelinux8.yml
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
