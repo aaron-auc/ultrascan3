@@ -185,6 +185,24 @@ echo "  Feature     : ${FEATURE:-<none> (base deps only)}"
 echo ""
 
 # =============================================================================
+# MACOS CI DISK MANAGEMENT (mirrors build.sh)
+# =============================================================================
+if [ "$PLATFORM" = "macOS" ] && [ "${CI:-false}" = "true" ]; then
+  echo "=========================================="
+  echo "macOS disk preflight"
+  echo "=========================================="
+  df -h
+  echo "Freeing large preinstalled tool stacks..."
+  sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
+  sudo rm -rf /usr/local/lib/android || true
+  sudo rm -rf /usr/local/share/dotnet || true
+  brew uninstall --force --ignore-dependencies azure-cli google-cloud-sdk || true
+  echo "Disk after cleanup:"
+  df -h
+  echo ""
+fi
+
+# =============================================================================
 # LINUX CI SCRATCH / DISK MANAGEMENT (mirrors build.sh)
 # =============================================================================
 US3_SCRATCH_ROOT="${US3_SCRATCH_ROOT:-}"

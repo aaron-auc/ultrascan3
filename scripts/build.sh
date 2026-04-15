@@ -247,6 +247,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # =============================================================================
+# MACOS CI DISK MANAGEMENT
+# macOS runners come with large preinstalled tools (Xcode simulators, etc.)
+# that consume significant disk. Free them before the build in CI.
+# =============================================================================
+if [ "$PLATFORM" = "macOS" ] && [ "${CI:-false}" = "true" ]; then
+  echo "=========================================="
+  echo "macOS disk preflight"
+  echo "=========================================="
+  df -h
+  echo "Freeing large preinstalled tool stacks not needed for UltraScan..."
+  # Xcode iOS/watchOS/tvOS simulators — largest single consumer (~20 GB)
+  sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
+  # Android SDK
+  sudo rm -rf /usr/local/lib/android || true
+  # .NET
+  sudo rm -rf /usr/local/share/dotnet || true
+  # Homebrew packages not needed for our build
+  brew uninstall --force --ignore-dependencies azure-cli google-cloud-sdk || true
+  echo ""
+  echo "Disk after cleanup:"
+  df -h
+  echo ""
+fi
+
+# =============================================================================
 # LINUX CI SCRATCH / DISK MANAGEMENT
 # On GitHub-hosted Ubuntu runners, root disk space is tight. Put large mutable
 # build state on scratch storage in CI when possible.
