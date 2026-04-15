@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v4
         with:
           # Fetch all history for git-based versioning in conf.py
           fetch-depth: 0
@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -63,7 +63,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v4
         with:
           # Fetch all history for git-based versioning in conf.py
           fetch-depth: 0
@@ -71,7 +71,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
