@@ -67,8 +67,8 @@ jobs:
     secrets: inherit
 
   rocky8:
-    name: "Rocky Linux 8 x64 (APP + HPC)"
-    uses: ./.github/workflows/nightly-rocky8.yml
+    name: "Oracle Linux 8 x64 (APP + HPC)"
+    uses: ./.github/workflows/nightly-oraclelinux8.yml
     with:
       ref:                     ${{ github.ref }}
       clean_tier:              incremental
@@ -121,8 +121,8 @@ jobs:
           cp_first "artifacts/release-*-APP-qt6-windows-2022-*/UltraScan3-*-Windows.exe"    "UltraScan3-APP-windows-x64.exe"
           cp_first "artifacts/release-*-APP-qt6-ubuntu-24.04-*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-APP-linux-x64.tar.gz"
           cp_first "artifacts/release-*-HPC-qt6-ubuntu-24.04-*/UltraScan3-*-Linux-*.tar.gz" "UltraScan3-HPC-linux-x64.tar.gz"
-          cp_first "artifacts/release-*-APP-qt6-rocky8-*/UltraScan3-*-Linux-*.tar.gz"       "UltraScan3-APP-rocky8-x64.tar.gz"
-          cp_first "artifacts/release-*-HPC-qt6-rocky8-*/UltraScan3-*-Linux-*.tar.gz"       "UltraScan3-HPC-rocky8-x64.tar.gz"
+          cp_first "artifacts/release-*-APP-qt6-oraclelinux8-*/UltraScan3-*-Linux-*.tar.gz"  "UltraScan3-APP-oraclelinux8-x64.tar.gz"
+          cp_first "artifacts/release-*-HPC-qt6-oraclelinux8-*/UltraScan3-*-Linux-*.tar.gz"  "UltraScan3-HPC-oraclelinux8-x64.tar.gz"
 
           echo "Assets ready:"
           ls -lh release-assets/
@@ -150,8 +150,8 @@ jobs:
           | \`UltraScan3-APP-windows-x64.exe\`  | Windows x64               | Desktop |
           | \`UltraScan3-APP-linux-x64.tar.gz\` | Ubuntu 24.04 x64          | Desktop |
           | \`UltraScan3-HPC-linux-x64.tar.gz\` | Ubuntu 24.04 x64          | HPC/MPI |
-          | \`UltraScan3-APP-rocky8-x64.tar.gz\`| Rocky Linux 8 x64         | Desktop |
-          | \`UltraScan3-HPC-rocky8-x64.tar.gz\`| Rocky Linux 8 x64         | HPC/MPI |"
+          | \`UltraScan3-APP-oraclelinux8-x64.tar.gz\`| Oracle Linux 8 x64         | Desktop |
+          | \`UltraScan3-HPC-oraclelinux8-x64.tar.gz\`| Oracle Linux 8 x64         | HPC/MPI |"
 
           gh release create "$TAG" release-assets/* \
             --title "UltraScan3 $TAG" \
