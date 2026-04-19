@@ -22,10 +22,7 @@ permissions:
 
 jobs:
 
-  # --------------------------------------------------------------------------
-  # PLATFORM BUILDS (all 5 platforms, in parallel)
-  # Each platform workflow runs its own probe → warm → build chain.
-  # --------------------------------------------------------------------------
+  # --- Group 1 (parallel) ---------------------------------------------------
 
   ubuntu:
     name: "Ubuntu 24.04 (APP + HPC)"
@@ -47,8 +44,22 @@ jobs:
       artifact_retention_days: 7
     secrets: inherit
 
+  # --- Group 2 (parallel, after group 1) ------------------------------------
+
+  oraclelinux8:
+    name: "Oracle Linux 8 x64 (APP + HPC)"
+    needs: [ubuntu, macos-arm]
+    uses: ./.github/workflows/nightly-oraclelinux8.yml
+    with:
+      ref:                     ${{ github.ref }}
+      clean_tier:              incremental
+      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
+      artifact_retention_days: 7
+    secrets: inherit
+
   macos-intel:
     name: "macOS Intel (APP)"
+    needs: [ubuntu, macos-arm]
     uses: ./.github/workflows/nightly-macos-intel.yml
     with:
       ref:                     ${{ github.ref }}
@@ -57,19 +68,12 @@ jobs:
       artifact_retention_days: 7
     secrets: inherit
 
+  # --- Group 3 (after group 2) -----------------------------------------------
+
   windows:
     name: "Windows x64 (APP)"
+    needs: [oraclelinux8, macos-intel]
     uses: ./.github/workflows/nightly-windows.yml
-    with:
-      ref:                     ${{ github.ref }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
-      artifact_retention_days: 7
-    secrets: inherit
-
-  rocky8:
-    name: "Oracle Linux 8 x64 (APP + HPC)"
-    uses: ./.github/workflows/nightly-oraclelinux8.yml
     with:
       ref:                     ${{ github.ref }}
       clean_tier:              incremental
@@ -85,7 +89,7 @@ jobs:
   # --------------------------------------------------------------------------
   publish-release:
     name: "Publish release ${{ github.ref_name }}"
-    needs: [ubuntu, macos-arm, macos-intel, windows, rocky8]
+    needs: [ubuntu, macos-arm, oraclelinux8, macos-intel, windows]
     if: success()
     runs-on: ubuntu-24.04
     steps:
