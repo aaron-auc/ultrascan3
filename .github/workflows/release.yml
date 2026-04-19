@@ -66,11 +66,8 @@ jobs:
       require_exact_cache_hit: true
       save_cache:              false
 
-  # --- Group 2 (parallel, after group 1) ------------------------------------
-
   oraclelinux8-app:
     name: "Oracle Linux 8 APP"
-    needs: [ubuntu-app, ubuntu-hpc, macos-arm]
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
@@ -86,7 +83,6 @@ jobs:
 
   oraclelinux8-hpc:
     name: "Oracle Linux 8 HPC"
-    needs: [ubuntu-app, ubuntu-hpc, macos-arm]
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
@@ -102,7 +98,6 @@ jobs:
 
   macos-intel:
     name: "macOS Intel APP"
-    needs: [ubuntu-app, ubuntu-hpc, macos-arm]
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
@@ -115,11 +110,8 @@ jobs:
       require_exact_cache_hit: true
       save_cache:              false
 
-  # --- Group 3 (after group 2) -----------------------------------------------
-
   windows:
     name: "Windows x64 APP"
-    needs: [oraclelinux8-app, oraclelinux8-hpc, macos-intel]
     uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
