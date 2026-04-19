@@ -2,11 +2,11 @@ name: UltraScan3 Release
 
 # ============================================================================
 # Triggered by a v* tag push.
-# Calls each of the 5 platform workflows via workflow_call, then publishes
-# a versioned GitHub Release with all platform assets.
+# Calls ultrascan-reusable-build.yml directly for each platform/profile,
+# then publishes a versioned GitHub Release with all platform assets.
 #
-# Platform workflows perform their own probe + warm + build internally.
-# This workflow just fans out, collects artifacts, and publishes.
+# Release builds are cache-consumer only: require_exact_cache_hit=true,
+# save_cache=false. Caches must be pre-warmed by the nightly workflows.
 # ============================================================================
 
 run-name: "Release ${{ github.ref_name }} by @${{ github.actor }}"
@@ -24,62 +24,113 @@ jobs:
 
   # --- Group 1 (parallel) ---------------------------------------------------
 
-  ubuntu:
-    name: "Ubuntu 24.04 (APP + HPC)"
-    uses: ./.github/workflows/nightly-ubuntu.yml
+  ubuntu-app:
+    name: "Ubuntu 24.04 APP"
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
+      runner:                  ubuntu-24.04
+      qt_variant:              qt6
+      profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
       artifact_retention_days: 7
-    secrets: inherit
+      require_exact_cache_hit: true
+      save_cache:              false
+
+  ubuntu-hpc:
+    name: "Ubuntu 24.04 HPC"
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+    with:
+      ref:                     ${{ github.ref }}
+      runner:                  ubuntu-24.04
+      qt_variant:              qt6
+      profile:                 HPC
+      clean_tier:              incremental
+      artifact_name_prefix:    ${{ format('release-{0}-HPC', github.ref_name) }}
+      artifact_retention_days: 7
+      require_exact_cache_hit: true
+      save_cache:              false
 
   macos-arm:
-    name: "macOS ARM (APP)"
-    uses: ./.github/workflows/nightly-macos-arm.yml
+    name: "macOS ARM APP"
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
+      runner:                  macos-15
+      qt_variant:              qt6
+      profile:                 APP
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
+      artifact_name_prefix:    ${{ format('release-{0}-arm', github.ref_name) }}
       artifact_retention_days: 7
-    secrets: inherit
+      require_exact_cache_hit: true
+      save_cache:              false
 
   # --- Group 2 (parallel, after group 1) ------------------------------------
 
-  oraclelinux8:
-    name: "Oracle Linux 8 x64 (APP + HPC)"
-    needs: [ubuntu, macos-arm]
-    uses: ./.github/workflows/nightly-oraclelinux8.yml
+  oraclelinux8-app:
+    name: "Oracle Linux 8 APP"
+    needs: [ubuntu-app, ubuntu-hpc, macos-arm]
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
+      runner:                  ubuntu-24.04
+      cache_os_label:          oraclelinux8
+      qt_variant:              qt6
+      profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
       artifact_retention_days: 7
-    secrets: inherit
+      require_exact_cache_hit: true
+      save_cache:              false
+
+  oraclelinux8-hpc:
+    name: "Oracle Linux 8 HPC"
+    needs: [ubuntu-app, ubuntu-hpc, macos-arm]
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
+    with:
+      ref:                     ${{ github.ref }}
+      runner:                  ubuntu-24.04
+      cache_os_label:          oraclelinux8
+      qt_variant:              qt6
+      profile:                 HPC
+      clean_tier:              incremental
+      artifact_name_prefix:    ${{ format('release-{0}-HPC', github.ref_name) }}
+      artifact_retention_days: 7
+      require_exact_cache_hit: true
+      save_cache:              false
 
   macos-intel:
-    name: "macOS Intel (APP)"
-    needs: [ubuntu, macos-arm]
-    uses: ./.github/workflows/nightly-macos-intel.yml
+    name: "macOS Intel APP"
+    needs: [ubuntu-app, ubuntu-hpc, macos-arm]
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
+      runner:                  macos-15-intel
+      qt_variant:              qt6
+      profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
       artifact_retention_days: 7
-    secrets: inherit
+      require_exact_cache_hit: true
+      save_cache:              false
 
   # --- Group 3 (after group 2) -----------------------------------------------
 
   windows:
-    name: "Windows x64 (APP)"
-    needs: [oraclelinux8, macos-intel]
-    uses: ./.github/workflows/nightly-windows.yml
+    name: "Windows x64 APP"
+    needs: [oraclelinux8-app, oraclelinux8-hpc, macos-intel]
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@main
     with:
       ref:                     ${{ github.ref }}
+      runner:                  windows-2022
+      qt_variant:              qt6
+      profile:                 APP
       clean_tier:              incremental
       artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
       artifact_retention_days: 7
-    secrets: inherit
+      require_exact_cache_hit: true
+      save_cache:              false
 
   # --------------------------------------------------------------------------
   # PUBLISH RELEASE
@@ -89,7 +140,7 @@ jobs:
   # --------------------------------------------------------------------------
   publish-release:
     name: "Publish release ${{ github.ref_name }}"
-    needs: [ubuntu, macos-arm, oraclelinux8, macos-intel, windows]
+    needs: [ubuntu-app, ubuntu-hpc, macos-arm, oraclelinux8-app, oraclelinux8-hpc, macos-intel, windows]
     if: success()
     runs-on: ubuntu-24.04
     steps:
