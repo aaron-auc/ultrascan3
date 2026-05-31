@@ -2,7 +2,7 @@ name: UltraScan3 On-Demand Build
 
 # ============================================================================
 # Manual dispatch (workflow_dispatch) entry point for on-demand platform builds.
-# Fans out to the corresponding build-<platform>.yml reusable workflows via
+# Fans out to the corresponding ./.github/workflows/build-<platform>.yml reusable workflows via
 # workflow_call. Each selected platform runs its own probe → warm → build chain
 # independently. Windows goes direct to build with no probe/warm phase.
 #
@@ -67,7 +67,7 @@ jobs:
       inputs.platforms == 'all'    ||
       inputs.platforms == 'ubuntu' ||
       inputs.platforms == 'linux'
-    uses: build-ubuntu.yml
+    uses: ./.github/workflows/build-ubuntu.yml
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
@@ -81,7 +81,7 @@ jobs:
       inputs.platforms == 'all'       ||
       inputs.platforms == 'macos-arm' ||
       inputs.platforms == 'macos'
-    uses: build-macos-arm.yml
+    uses: ./.github/workflows/build-macos-arm.yml
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
@@ -95,7 +95,7 @@ jobs:
       inputs.platforms == 'all'         ||
       inputs.platforms == 'macos-intel' ||
       inputs.platforms == 'macos'
-    uses: build-macos-intel.yml
+    uses: ./.github/workflows/build-macos-intel.yml
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
@@ -108,7 +108,7 @@ jobs:
     if: |
       inputs.platforms == 'all'     ||
       inputs.platforms == 'windows'
-    uses: build-windows.yml
+    uses: ./.github/workflows/build-windows.yml
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
@@ -122,7 +122,7 @@ jobs:
       inputs.platforms == 'all'         ||
       inputs.platforms == 'oraclelinux8' ||
       inputs.platforms == 'linux'
-    uses: build-oraclelinux.yml
+    uses: ./.github/workflows/build-oraclelinux.yml
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
