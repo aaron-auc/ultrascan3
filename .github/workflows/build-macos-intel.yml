@@ -15,9 +15,10 @@ name: Build — macOS Intel
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 # (No schedule trigger on this file; builds whenever called or dispatched.)
 
+# build-macos-intel.yml
 run-name: >-
   ${{ github.event_name == 'workflow_call'
-    && format('Release macOS Intel [{0}]', inputs.ref)
+    && format('macOS Intel [{0}]', inputs.ref)
     || format('Manual macOS Intel by @{0}', github.actor) }}
 
 on:

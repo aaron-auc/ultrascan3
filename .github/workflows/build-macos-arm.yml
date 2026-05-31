@@ -14,11 +14,10 @@ name: Build — macOS ARM
 # Change detection for scheduled nightly runs is handled by nightly-build.yml.
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 
+# build-macos-arm.yml
 run-name: >-
-  ${{ github.event_name == 'schedule'
-    && format('Nightly macOS ARM [{0}]', github.run_started_at)
-    || github.event_name == 'workflow_call'
-    && format('Release macOS ARM [{0}]', inputs.ref)
+  ${{ github.event_name == 'workflow_call'
+    && format('macOS ARM [{0}]', inputs.ref)
     || format('Manual macOS ARM by @{0}', github.actor) }}
 
 on:

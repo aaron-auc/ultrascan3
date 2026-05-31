@@ -20,12 +20,11 @@ name: Build — Ubuntu
 # Change detection for scheduled nightly runs is handled by nightly-build.yml.
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 
+# build-ubuntu.yml
 run-name: >-
-  ${{ github.event_name == 'schedule'
-    && format('Nightly Ubuntu [{0}]', github.run_started_at)
-    || github.event_name == 'workflow_call'
-    && format('Release Ubuntu [{0}]', inputs.ref)
-    || format('Manual Ubuntu by @{0}', github.actor) }}
+  ${{ github.event_name == 'workflow_call'
+    && format('Ubuntu 24.04 [{0}]', inputs.ref)
+    || format('Manual Ubuntu 24.04 by @{0}', github.actor) }}
 
 on:
   workflow_dispatch:

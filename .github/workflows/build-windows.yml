@@ -15,11 +15,9 @@ name: Build — Windows
 # Windows goes direct to build with no probe/warm phase.
 
 run-name: >-
-  ${{ github.event_name == 'schedule'
-    && format('Nightly Windows [{0}]', github.run_started_at)
-    || github.event_name == 'workflow_call'
-    && format('Release Windows [{0}]', inputs.ref)
-    || format('Manual Windows by @{0}', github.actor) }}
+    ${{ github.event_name == 'workflow_call'
+      && format('Windows [{0}]', inputs.ref)
+      || format('Manual Windows by @{0}', github.actor) }}
 
 on:
   workflow_dispatch:

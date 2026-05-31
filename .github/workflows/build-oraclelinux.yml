@@ -16,12 +16,11 @@ name: Build — Oracle Linux 8
 # Change detection for scheduled nightly runs is handled by nightly-build.yml.
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 
+# build-oraclelinux.yml
 run-name: >-
-  ${{ github.event_name == 'schedule'
-    && format('Nightly OracleLinux8 [{0}]', github.run_started_at)
-    || github.event_name == 'workflow_call'
-    && format('Release OracleLinux8 [{0}]', inputs.ref)
-    || format('Manual OracleLinux8 by @{0}', github.actor) }}
+  ${{ github.event_name == 'workflow_call'
+    && format('Oracle Linux 8 [{0}]', inputs.ref)
+    || format('Manual Oracle Linux 8 by @{0}', github.actor) }}
 
 on:
   workflow_dispatch:
