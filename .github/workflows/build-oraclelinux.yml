@@ -4,7 +4,7 @@ name: Build — Oracle Linux 8
 # Reusable platform build workflow: Oracle Linux 8.10 x64
 #   (oraclelinux:8 container on ubuntu-24.04)
 # Profiles:  APP + HPC
-# Callers:   nightly-builds.yml (scheduled, Group 2) and on-demand-build.yml
+# Callers:   nightly-build.yml (scheduled, Group 2) and on-demand-build.yml
 #            (manual dispatch) invoke this via workflow_call.
 # Standalone: workflow_dispatch on this file for one-off builds; runs
 #             probe → warm → build
@@ -13,7 +13,7 @@ name: Build — Oracle Linux 8
 #            and does NOT invoke this workflow.
 # ============================================================================
 #
-# Change detection for scheduled nightly runs is handled by nightly-builds.yml.
+# Change detection for scheduled nightly runs is handled by nightly-build.yml.
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 
 run-name: >-

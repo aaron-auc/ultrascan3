@@ -3,14 +3,14 @@ name: Build — Windows
 # ============================================================================
 # Reusable platform build workflow: Windows x64 (windows-2022)
 # Profiles:  APP
-# Callers:   nightly-builds.yml (scheduled, Group 3) and on-demand-build.yml
+# Callers:   nightly-build.yml (scheduled, Group 3) and on-demand-build.yml
 #            (manual dispatch) invoke this via workflow_call.
 # Standalone: workflow_dispatch on this file for one-off builds.
 # Note:      release.yml calls ultrascan-reusable-build.yml (external) directly
 #            and does NOT invoke this workflow.
 # ============================================================================
 #
-# Change detection for scheduled nightly runs is handled by nightly-builds.yml.
+# Change detection for scheduled nightly runs is handled by nightly-build.yml.
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 # Windows goes direct to build with no probe/warm phase.
 

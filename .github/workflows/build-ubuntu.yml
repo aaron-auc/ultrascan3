@@ -3,7 +3,7 @@ name: Build — Ubuntu
 # ============================================================================
 # Reusable platform build workflow: Ubuntu 24.04 x64
 # Profiles:  APP + HPC
-# Callers:   nightly-builds.yml (scheduled, Group 1) and on-demand-build.yml
+# Callers:   nightly-build.yml (scheduled, Group 1) and on-demand-build.yml
 #            (manual dispatch) invoke this via workflow_call.
 # Standalone: workflow_dispatch on this file for one-off builds; runs
 #             probe → warm → build.
@@ -17,7 +17,7 @@ name: Build — Ubuntu
 #   A miss on ubuntu does NOT trigger warming for any other platform.
 #   The warm job is skipped when the probe job itself was skipped.
 #
-# Change detection for scheduled nightly runs is handled by nightly-builds.yml.
+# Change detection for scheduled nightly runs is handled by nightly-build.yml.
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 
 run-name: >-

@@ -3,7 +3,7 @@ name: Build — macOS ARM
 # ============================================================================
 # Reusable platform build workflow: macOS 15 arm64 (Apple Silicon)
 # Profiles:  APP
-# Callers:   nightly-builds.yml (scheduled, Group 1) and on-demand-build.yml
+# Callers:   nightly-build.yml (scheduled, Group 1) and on-demand-build.yml
 #            (manual dispatch) invoke this via workflow_call.
 # Standalone: workflow_dispatch on this file for one-off builds; runs
 #             probe → warm → build. No schedule trigger on this file.
@@ -11,7 +11,7 @@ name: Build — macOS ARM
 #            and does NOT invoke this workflow.
 # ============================================================================
 #
-# Change detection for scheduled nightly runs is handled by nightly-builds.yml.
+# Change detection for scheduled nightly runs is handled by nightly-build.yml.
 # Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
 
 run-name: >-
