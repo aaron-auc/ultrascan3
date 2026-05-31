@@ -1,16 +1,18 @@
-name: Nightly — Windows
+name: Build — Windows
 
 # ============================================================================
-# Platform: Windows x64 (windows-2022)
+# Reusable platform build workflow: Windows x64 (windows-2022)
 # Profiles:  APP
-# Schedule:  nightly (selected platform)
-# Release:   called by release.yml via workflow_call
-# Manual:    workflow_dispatch on this file
+# Callers:   nightly-builds.yml (scheduled, Group 3) and on-demand-build.yml
+#            (manual dispatch) invoke this via workflow_call.
+# Standalone: workflow_dispatch on this file for one-off builds.
+# Note:      release.yml calls ultrascan-reusable-build.yml (external) directly
+#            and does NOT invoke this workflow.
 # ============================================================================
 #
-# Change detection is handled by the caller (nightly-builds.yml) for
-# scheduled runs. workflow_dispatch on this file always proceeds.
-# Windows does not participate in staged cache warming.
+# Change detection for scheduled nightly runs is handled by nightly-builds.yml.
+# Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
+# Windows goes direct to build with no probe/warm phase.
 
 run-name: >-
   ${{ github.event_name == 'schedule'

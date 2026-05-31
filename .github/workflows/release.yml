@@ -1,12 +1,16 @@
 name: UltraScan3 Release
 
 # ============================================================================
-# Triggered by a v* tag push.
-# Calls ultrascan-reusable-build.yml directly for each platform/profile,
-# then publishes a versioned GitHub Release with all platform assets.
+# Triggered by a v* tag push (permanent versioned release).
+# Calls ultrascan-reusable-build.yml (from ehb54/uslims_version_workflows)
+# directly for each platform/profile in parallel — does NOT invoke the local
+# build-<platform>.yml reusable workflows. Once all platform builds succeed,
+# publish-release downloads all artifacts, renames to stable filenames, and
+# creates a permanent versioned GitHub Release.
 #
 # Release builds are cache-consumer only: require_exact_cache_hit=true,
-# save_cache=false. Caches must be pre-warmed by the nightly workflows.
+# save_cache=false. Caches must be pre-warmed by the nightly build before
+# a release tag is pushed.
 # ============================================================================
 
 run-name: "Release ${{ github.ref_name }} by @${{ github.actor }}"

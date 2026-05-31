@@ -1,12 +1,13 @@
 name: UltraScan3 On-Demand Build
 
 # ============================================================================
-# Manual dispatch: run any single platform, any combination, or all.
-# Each selected platform executes independently with its own probe/warm/build.
-# Windows goes direct to build with no warm phase.
+# Manual dispatch (workflow_dispatch) entry point for on-demand platform builds.
+# Fans out to the corresponding build-<platform>.yml reusable workflows via
+# workflow_call. Each selected platform runs its own probe → warm → build chain
+# independently. Windows goes direct to build with no probe/warm phase.
 #
-# Selecting a platform here fans out to the corresponding nightly-<platform>.yml
-# via workflow_call so the logic stays in one place.
+# Inputs: ref (branch/tag/SHA), platforms (single, group, or all), clean tier,
+#         artifact retention. All artifacts are prefixed with ondemand-<run>.
 # ============================================================================
 
 run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.platforms }} by @${{ github.actor }}"

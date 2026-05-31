@@ -1,17 +1,19 @@
-name: Nightly — macOS Intel
+name: Build — macOS Intel
 
 # ============================================================================
-# Platform: macOS 15 Intel x86_64
+# Reusable platform build workflow: macOS 15 Intel x86_64
 # Profiles:  APP
-# Schedule:  NOT on nightly schedule (Intel is not a selected nightly platform)
-#             Remove the comment below and add a cron entry to opt in.
-# Release:   called by release.yml via workflow_call
-# Manual:    workflow_dispatch on this file
+# Callers:   nightly-builds.yml (scheduled, Group 2) and on-demand-build.yml
+#            (manual dispatch) invoke this via workflow_call.
+# Standalone: workflow_dispatch on this file for one-off builds; runs
+#             probe → warm → build. No schedule trigger on this file.
+# Note:      release.yml calls ultrascan-reusable-build.yml (external) directly
+#            and does NOT invoke this workflow.
 # ============================================================================
 #
-# Change detection is handled by the caller (nightly-builds.yml) for
-# scheduled runs. workflow_dispatch on this file always proceeds.
-# (No schedule trigger on this workflow; always builds when called.)
+# Change detection for scheduled nightly runs is handled by nightly-builds.yml.
+# Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
+# (No schedule trigger on this file; builds whenever called or dispatched.)
 
 run-name: >-
   ${{ github.event_name == 'workflow_call'

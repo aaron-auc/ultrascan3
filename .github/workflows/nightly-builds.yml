@@ -1,5 +1,26 @@
 name: UltraScan3 Nightly Build
 
+# ============================================================================
+# Scheduled nightly orchestration workflow.
+# Trigger: cron at 06:00 UTC daily; also supports workflow_dispatch for manual
+#          nightly runs.
+#
+# PHASE 0 — Gate (check-changes): decides whether the nightly build is needed.
+#   Skips all builds if no commits landed in the last 24h and the `nightly` tag
+#   already resolves to the current origin/main HEAD.
+#
+# PHASE 1-3 — Platform builds in three sequential groups (to stay within the
+#   10 GB Actions cache quota), each group fanning out to the corresponding
+#   build-<platform>.yml reusable workflow via workflow_call:
+#   Group 1 (parallel): ubuntu + macos-arm
+#   Group 2 (parallel, after Group 1): oraclelinux8 + macos-intel
+#   Group 3 (after Group 2): windows
+#
+# PHASE 4 — Publish (publish-release): runs only when all platform builds
+#   succeed. Downloads all run artifacts, renames to stable filenames, and
+#   overwrites the rolling `nightly` GitHub pre-release.
+# ============================================================================
+
 run-name: >-
   ${{ github.event_name == 'schedule'
     && format('Nightly [main] {0}', github.run_started_at)
