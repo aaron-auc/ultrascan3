@@ -112,7 +112,7 @@ jobs:
     if: |
       needs.probe-app.outputs.cache-hit != 'true' ||
       needs.probe-hpc.outputs.cache-hit != 'true'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@aacc200d0c68de5d0840c15567b484aac9a8018e
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
     with:
       ref:        ${{ inputs.ref || 'main' }}
       platforms:  "oraclelinux8-x64"
@@ -126,7 +126,7 @@ jobs:
     name: "OracleLinux8 APP (qt6)"
     needs: [probe-app, probe-hpc, warm-if-needed]
     if: ${{ !cancelled() }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@aacc200d0c68de5d0840c15567b484aac9a8018e
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
@@ -143,7 +143,7 @@ jobs:
     name: "OracleLinux8 HPC (qt6)"
     needs: [probe-app, probe-hpc, warm-if-needed]
     if: ${{ !cancelled() }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@aacc200d0c68de5d0840c15567b484aac9a8018e
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04

@@ -180,7 +180,7 @@ jobs:
       !cancelled() &&
       needs.probe-app.result == 'success' &&
       (needs.probe-app.outputs.cache-valid == 'true' || needs.warm-if-needed.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@aacc200d0c68de5d0840c15567b484aac9a8018e
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  windows-2022
