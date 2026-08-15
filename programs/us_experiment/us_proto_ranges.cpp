@@ -34,8 +34,8 @@ US_ExperGuiRanges::US_ExperGuiRanges( QWidget* topw )
 
    //QPushButton* pb_details  = us_pushbutton( tr( "View Current Range Settings" ) );
    QPushButton* pb_details  = us_pushbutton( tr( "View Ranges" ) );
-   connect( pb_details,   SIGNAL( clicked()       ),
-            this,         SLOT  ( detailRanges()  ) );
+   connect( pb_details,   &QAbstractButton::clicked,
+            this,         &US_ExperGuiRanges::detailRanges );
 
    // Show also a scan interval (if it was updated - in RED !!!)
    QLabel*  lb_scanint = us_label( "Scan Interval: UV/vis. (in red if updated): " );
@@ -168,8 +168,8 @@ US_ExperGuiRanges::US_ExperGuiRanges( QWidget* topw )
       containerW_buff_sp->setLayout( lo_buff_spectrum );
       ck_buff_spectrum   ->setObjectName( strow + ": ck_buff_spectrum" );
       containerW_buff_sp ->setObjectName( strow + ": ck_buff_spectrum_container" );
-      connect( ck_buff_spectrum, SIGNAL( toggled     ( bool ) ),
-               this,           SLOT  ( buffer_spectrum_checked( bool ) ) );
+      connect( ck_buff_spectrum, &QAbstractButton::toggled,
+               this,           &US_ExperGuiRanges::buffer_spectrum_checked );
       // genL->addWidget( containerW_buff_sp, row++,  16, 1, 2 );
       // containerW_buff_sp -> setVisible( false );
       
@@ -183,12 +183,12 @@ US_ExperGuiRanges::US_ExperGuiRanges( QWidget* topw )
       // connect( pbwavln, SIGNAL( clicked()           ),
       //          this,    SLOT  ( selectWavelengths() ) );
 
-      connect( pbwavln, SIGNAL( clicked()           ),           //ALEXEY
-               this,    SLOT  ( Wavelengths_class() ) );
-      connect( ctradfr, SIGNAL( valueChanged     ( double ) ),
-               this,    SLOT  ( changedLowRadius ( double ) ) );
-      connect( ctradto, SIGNAL( valueChanged     ( double ) ),
-               this,    SLOT  ( changedHighRadius( double ) ) );
+      connect( pbwavln, &QAbstractButton::clicked,           //ALEXEY
+               this,    &US_ExperGuiRanges::Wavelengths_class );
+      connect( ctradfr, qOverload< double >( &QDoubleSpinBox::valueChanged ),
+               this,    &US_ExperGuiRanges::changedLowRadius );
+      connect( ctradto, qOverload< double >( &QDoubleSpinBox::valueChanged ),
+               this,    &US_ExperGuiRanges::changedHighRadius );
 #if 0
       connect( ckoptim, SIGNAL( toggled    ( bool )   ),
                this,    SLOT  ( checkOptima( bool )   ) );
@@ -1049,18 +1049,22 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	}
       if ( has_absorbance )
 	{
-	  //ALEXEY: use this algorithm
-	  if ( scanint_sec > scanint_sec_min*tot_wvl )
-	    {
-	      scancount     = int( duration_sec / scanint_sec );
-	      scaninterval  = scanint_sec;
-	    }
-	  else
-	    {
-	      scancount    = int( duration_sec / (scanint_sec_min * tot_wvl) );
-	      scaninterval = int( scanint_sec_min * tot_wvl );
-	      scaninterval_updated = true; //updated: show in RED
-	    }
+	  // //ALEXEY: use this algorithm
+	  // if ( scanint_sec > scanint_sec_min*tot_wvl )
+	  //   {
+	  //     scancount     = int( duration_sec / scanint_sec );
+	  //     scaninterval  = scanint_sec;
+	  //   }
+	  // else
+	  //   {
+	  //     scancount    = int( duration_sec / (scanint_sec_min * tot_wvl) );
+	  //     scaninterval = int( scanint_sec_min * tot_wvl );
+	  //     scaninterval_updated = true; //updated: show in RED
+	  //   }
+
+	  scancount    = int( duration_sec / (scanint_sec_min * tot_wvl) );
+	  scaninterval = int( scanint_sec_min * tot_wvl );
+	  scaninterval_updated = true; //updated: show in RED
 	  
 	  //Increase scan interval if scancount >= 1500:
 	  if( scancount >= 1500 )
@@ -1073,7 +1077,8 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	  rpSpeed->ssteps[ i ].scancount = scancount;
 	  mainw->ScanCount_global   = scancount;
 	  mainw->currProto.scanCount;
-	  mainw->TotalWvlNum_global = tot_wvl; 
+	  mainw->TotalWvlNum_global = tot_wvl;
+	  rpSpeed->ssteps[ i ].scanintv = scaninterval; 
 	
 	  
 	  //Update le_scanint text: set text color RED if updated
@@ -1089,7 +1094,7 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	      //palette->setColor(QPalette::Base,Qt::white);
 	      le_scanint->setPalette(*palette);
 	      
-	      rpSpeed->ssteps[ i ].scanintv = scaninterval;
+	      //rpSpeed->ssteps[ i ].scanintv = scaninterval;
 	    }
 	  else
 	    {
@@ -1129,17 +1134,21 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	  ncells_used_int /= 2;
 	  
 	  //ALEXEY: use this algorithm for Interference: scanint_min=5; 
-	  if ( scanint_sec_int > 5 * ncells_used_int )
-	    {
-	      scancount_int     = int( duration_sec / scanint_sec_int );
-	      scaninterval_int  = scanint_sec_int;
-	    }
-	  else
-	    {
-	      scancount_int            = int( duration_sec / (5 * ncells_used_int ) );
-	      scaninterval_int         = int( 5 * ncells_used_int );
-	      scaninterval_int_updated = true; //updated: show in RED
-	    }
+	  // if ( scanint_sec_int > 5 * ncells_used_int )
+	  //   {
+	  //     scancount_int     = int( duration_sec / scanint_sec_int );
+	  //     scaninterval_int  = scanint_sec_int;
+	  //   }
+	  // else
+	  //   {
+	  //     scancount_int            = int( duration_sec / (5 * ncells_used_int ) );
+	  //     scaninterval_int         = int( 5 * ncells_used_int );
+	  //     scaninterval_int_updated = true; //updated: show in RED
+	  //   }
+
+	  scancount_int            = int( duration_sec / (5 * ncells_used_int ) );
+	  scaninterval_int         = int( 5 * ncells_used_int );
+	  scaninterval_int_updated = true; //updated: show in RED
 	  
 	  //Increase scan interval if scancount >= 1500:
 	  if( scancount_int >= 1500 )
@@ -1155,7 +1164,7 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	  rpSpeed->ssteps[ i ].scancount_int = scancount_int;
 	  mainw->ScanCount_global_int     = scancount_int;
 	  mainw->currProto.scanCount_int  = scancount_int; 
-	  
+	  rpSpeed->ssteps[ i ].scanintv_int = scaninterval_int;
           
 	  //Update le_scanint text: set text color RED if updated
 	  QList< int > hms_scanint_int;
@@ -1170,7 +1179,7 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	      //palette->setColor(QPalette::Base,Qt::white);
 	      le_scanint_int->setPalette(*palette_int);
 	      
-	      rpSpeed->ssteps[ i ].scanintv_int = scaninterval_int;
+	      //rpSpeed->ssteps[ i ].scanintv_int = scaninterval_int;
 	    }
 	  else
 	    {
@@ -1401,17 +1410,21 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	{
 	  
 	  //ALEXEY: use this algorithm
-	  if ( scanint_sec > scanint_sec_min*tot_wvl )
-	    {
-	      scancount     = int( duration_sec / scanint_sec );
-	      scaninterval  = scanint_sec;
-	    }
-	  else
-	    {
-	      scancount    = int( duration_sec / (scanint_sec_min * tot_wvl) );
-	      scaninterval = int( scanint_sec_min * tot_wvl );
-	      scaninterval_updated = true; //updated: show in RED
-	    }
+	  // if ( scanint_sec > scanint_sec_min*tot_wvl )
+	  //   {
+	  //     scancount     = int( duration_sec / scanint_sec );
+	  //     scaninterval  = scanint_sec;
+	  //   }
+	  // else
+	  //   {
+	  //     scancount    = int( duration_sec / (scanint_sec_min * tot_wvl) );
+	  //     scaninterval = int( scanint_sec_min * tot_wvl );
+	  //     scaninterval_updated = true; //updated: show in RED
+	  //   }
+	  scancount    = int( duration_sec / (scanint_sec_min * tot_wvl) );
+	  scaninterval = int( scanint_sec_min * tot_wvl );
+	  scaninterval_updated = true; //updated: show in RED
+	  
 	  
 	  //Increase scan interval if scancount >= 1500:
 	  if( scancount >= 1500 )
@@ -1482,17 +1495,21 @@ DbgLv(1) << "EGRan: ranrows: ccrows" << ccrows;
 	  ncells_used_int /= 2;
 	  
 	  //ALEXEY: use this algorithm for Interference: scanint_min=5; 
-	  if ( scanint_sec_int > 5 * ncells_used_int )
-	    {
-	      scancount_int     = int( duration_sec / scanint_sec_int );
-	      scaninterval_int  = scanint_sec_int;
-	    }
-	  else
-	    {
-	      scancount_int            = int( duration_sec / (5 * ncells_used_int ) );
-	      scaninterval_int         = int( 5 * ncells_used_int );
-	      scaninterval_int_updated = true; //updated: show in RED
-	    }
+	  // if ( scanint_sec_int > 5 * ncells_used_int )
+	  //   {
+	  //     scancount_int     = int( duration_sec / scanint_sec_int );
+	  //     scaninterval_int  = scanint_sec_int;
+	  //   }
+	  // else
+	  //   {
+	  //     scancount_int            = int( duration_sec / (5 * ncells_used_int ) );
+	  //     scaninterval_int         = int( 5 * ncells_used_int );
+	  //     scaninterval_int_updated = true; //updated: show in RED
+	  //   }
+
+	  scancount_int            = int( duration_sec / (5 * ncells_used_int ) );
+	  scaninterval_int         = int( 5 * ncells_used_int );
+	  scaninterval_int_updated = true; //updated: show in RED
 	  
 	  //Increase scan interval if scancount >= 1500:
 	  if( scancount_int >= 1500 )
@@ -1826,20 +1843,20 @@ DbgLv(1) << "SelWl:    k_pot k_sel" << potential.count() << selected.count();
    rngL->addWidget( ct_incwln,       row++, 3, 1, 3 );
 
   // Connections
-   connect( pb_add,    SIGNAL( clicked() ), SLOT( add_selections()  ) );
-   connect( pb_remove, SIGNAL( clicked() ), SLOT( rmv_selections()  ) );
-   connect( pb_addall, SIGNAL( clicked() ), SLOT( add_all_selects() ) );
-   connect( pb_rmvall, SIGNAL( clicked() ), SLOT( rmv_all_selects() ) );
-   connect( pb_reset,  SIGNAL( clicked() ), SLOT( reset()  ) );
-   connect( pb_help,   SIGNAL( clicked() ), SLOT( help()   ) );
-   connect( pb_cancel, SIGNAL( clicked() ), SLOT( cancel() ) );
-   connect( pb_accept, SIGNAL( clicked() ), SLOT( done()   ) );
-   connect( ct_strwln, SIGNAL( valueChanged( double ) ),
-            this,      SLOT  ( new_wl_start( double ) ) );
-   connect( ct_endwln, SIGNAL( valueChanged( double ) ),
-            this,      SLOT  ( new_wl_end  ( double ) ) );
-   connect( ct_incwln, SIGNAL( valueChanged( double ) ),
-            this,      SLOT  ( new_wl_incr ( double ) ) );
+   connect( pb_add,    &QAbstractButton::clicked, this, &US_SelectWavelengths::add_selections );
+   connect( pb_remove, &QAbstractButton::clicked, this, &US_SelectWavelengths::rmv_selections );
+   connect( pb_addall, &QAbstractButton::clicked, this, &US_SelectWavelengths::add_all_selects );
+   connect( pb_rmvall, &QAbstractButton::clicked, this, &US_SelectWavelengths::rmv_all_selects );
+   connect( pb_reset,  &QAbstractButton::clicked, this, &US_SelectWavelengths::reset );
+   connect( pb_help,   &QAbstractButton::clicked, this, &US_SelectWavelengths::help );
+   connect( pb_cancel, &QAbstractButton::clicked, this, &US_SelectWavelengths::cancel );
+   connect( pb_accept, &QAbstractButton::clicked, this, &US_SelectWavelengths::done );
+   connect( ct_strwln, &QwtCounter::valueChanged,
+            this,      &US_SelectWavelengths::new_wl_start );
+   connect( ct_endwln, &QwtCounter::valueChanged,
+            this,      &US_SelectWavelengths::new_wl_end );
+   connect( ct_incwln, &QwtCounter::valueChanged,
+            this,      &US_SelectWavelengths::new_wl_incr );
 
    // Complete layouts
    buttons->addWidget( pb_reset  );
@@ -1921,13 +1938,13 @@ DbgLv(1) << "SelWl: IN k_ori k_sel" << nbr_poten << nbr_selec;
    genL->addLayout( buttons,   row,     0, 1, 8 );
 
   // Connections
-   connect( pb_reset,  SIGNAL( clicked() ), SLOT( reset()  ) );
-   connect( pb_help,   SIGNAL( clicked() ), SLOT( help()   ) );
-   connect( pb_cancel, SIGNAL( clicked() ), SLOT( cancel() ) );
-   connect( pb_accept, SIGNAL( clicked() ), SLOT( done()   ) );
+   connect( pb_reset,  &QAbstractButton::clicked, this, &US_SelectWavelengths_manual::reset );
+   connect( pb_help,   &QAbstractButton::clicked, this, &US_SelectWavelengths_manual::help );
+   connect( pb_cancel, &QAbstractButton::clicked, this, &US_SelectWavelengths_manual::cancel );
+   connect( pb_accept, &QAbstractButton::clicked, this, &US_SelectWavelengths_manual::done );
 
-   connect( le_wrange, SIGNAL( textChanged(QString) ),
-            this,      SLOT  ( wln_changed(QString) ) );
+   connect( le_wrange, &QLineEdit::textChanged,
+            this,      &US_SelectWavelengths_manual::wln_changed );
    // connect( le_wrange, SIGNAL( editingFinished() ),
    //          this,      SLOT  ( wln_entered() ) );
 

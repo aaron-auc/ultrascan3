@@ -285,9 +285,35 @@ void US_ExperimentMain::disable_tabs_buttons( void )
 
 }
 
+//Slot to DISABLE tabs after  2. Lab/Rotor and the Next buttons when dataDisk clicked/unclicked
+void US_ExperimentMain::disableEnable_tabs_for_dataDisk( bool disabled )
+{
+  pb_next   ->setEnabled( !disabled );
+  
+  for (int i=2; i<tabWidget->count(); i++)
+    {
+      tabWidget ->setTabEnabled( i, !disabled );
+      if ( disabled )
+	tabWidget ->tabBar()->setTabTextColor( i, Qt::darkGray);
+      else
+	{
+	  QPalette pal = tabWidget ->tabBar()->palette();
+	  tabWidget ->tabBar()->setTabTextColor( i, pal.color(QPalette::WindowText) ); // Qt::black
+	}
+    }
+
+  qApp->processEvents();
+
+}
+
 //Slot to ENABLE tabs and Next/Prev buttons
 void US_ExperimentMain::enable_tabs_buttons( void )
 {
+  if ( currProto.rpRotor.importData &&
+       currProto.rpRotor.importDataDisk.isEmpty() &&
+       !us_prot_dev_mode)
+    return;
+  
   DbgLv(1) << "ENABLING!!!";
   pb_next   ->setEnabled(true);
   pb_prev   ->setEnabled(true);
@@ -638,6 +664,7 @@ DbgLv(1) << "mainw->automode" << mainw->automode;
      }
    //////////////////
    mainw->enable_disable_prev_next_btns();
+
 }
 
 
@@ -1101,6 +1128,9 @@ DbgLv(1) << "EGRo: inP: calib_entr" << cal_entr;
    init_gapprs();
    init_gsmes();
 
+   //Disable Add To List for [o | r | a | sme ] if respective lists are empty
+   setEnabledDisabledAddToORASME();
+
    //BAsed on mode [usmode - R&D], hide/show oper/rev section:
       //show Assign oper/rev ONLY for GMP:
    qDebug() << "In Rotor: mainw->automode, mainw->usmode -- "
@@ -1163,6 +1193,24 @@ DbgLv(1) << "EGRo: inP: calib_entr" << cal_entr;
    qDebug() << "Rotor::initPanel(), rpRotor->importData_absorbance_t, rpRotor->importData_absorbance_pa -- "
 	    << rpRotor->importData_absorbance_t <<  rpRotor->importData_absorbance_pa;
 
+   /////
+   mainw->enable_disable_prev_next_btns();
+   
+}
+
+void US_ExperGuiRotor::setEnabledDisabledAddToORASME( void )
+{
+  bool isOperEmpty = cb_choose_operator->count() == 0;
+  pb_add_oper->setEnabled( !isOperEmpty );
+
+  bool isRevEmpty = cb_choose_rev->count() == 0;
+  pb_add_rev->setEnabled( !isRevEmpty );
+
+  bool isApprEmpty = cb_choose_appr->count() == 0;
+  pb_add_appr->setEnabled( !isApprEmpty );
+
+  bool isSmeEmpty = cb_choose_sme->count() == 0;
+  pb_add_sme->setEnabled( !isSmeEmpty );
 }
 
 void US_ExperGuiRotor::init_grevs( void )
@@ -2589,10 +2637,22 @@ DbgLv(1) << "EGSo:inP: mxrow" << mxrow << "labls count" << cc_labls.count();
  for ( int ii = 0; ii < mxrow; ii++ )
    {
      QComboBox*   cb_solution = cc_solus[ ii ];
-     connect( cb_solution,  SIGNAL( currentIndexChanged( int ) ),
-	      this,         SLOT  ( changeSolu         ( int ) ) );
+     connect( cb_solution,  qOverload< int >( &QComboBox::currentIndexChanged ),
+	      this,         &US_ExperGuiSolutions::changeSolu );
       
    }
+
+ //If dataDisk, disallow (unspecified)
+   if( rpRotor->importData && !rpRotor->importDataDisk.isEmpty() )
+     {
+       for ( int ii = 0; ii < cc_solus.size(); ii++ )
+	 {
+	   QString substring = "(unspecified)";
+	   int index;
+	   while ((index = cc_solus[ ii ]->findText(substring, Qt::MatchContains)) != -1)
+	     cc_solus[ ii ]->removeItem(index);
+	 }
+     }
 }
 
 // Save panel controls when about to leave the panel
@@ -4031,16 +4091,16 @@ DbgLv(1) << "EGUp:inP: ck: run proj cent solu epro"
        if ( rpRotor->importData && !rpRotor->importDataDisk.isEmpty() )
 	 {
 	   pb_submit -> disconnect();
-	   connect( pb_submit,    SIGNAL( clicked()          ),
-		    this,         SLOT  ( submitExperiment_confirm_dataDisk() ) );
+	   connect( pb_submit,    &QAbstractButton::clicked,
+		    this,         &US_ExperGuiUpload::submitExperiment_confirm_dataDisk );
        
 	 }
      }
    else //PD
      {
        pb_submit -> disconnect();
-       connect( pb_submit,    SIGNAL( clicked()          ),
-		this,         SLOT  ( submitExperiment_confirm_protDev() ) );
+       connect( pb_submit,    &QAbstractButton::clicked,
+		this,         &US_ExperGuiUpload::submitExperiment_confirm_protDev );
        
        pb_submit->show();
        pb_saverp->hide();
@@ -4248,10 +4308,26 @@ bool US_ExperGuiUpload::protocolToDataDisk( QStringList& msg_to_user )
   mainw->get_importDisk_data( "ranges", chann_ranges_from_dataDisk );
   QStringList chann_numbers_from_dataDisk  = runTypes_from_dataDisk.keys();
 
+  qDebug() << "[Upload:check protocolToDataDisk()] : runTypes_from_dataDisk -- "
+	   << runTypes_from_dataDisk << ", " << runTypes_from_dataDisk.keys();
+  qDebug() << "[Upload:check protocolToDataDisk()] : chann_ranges_from_dataDisk -- "
+	   << chann_ranges_from_dataDisk << ", " << chann_ranges_from_dataDisk.keys();
+
+  //get it straight from data uploaded:
+  QStringList channels_dataDisk = mainw->get_all_channels_dataDisk();
   QStringList channames_from_dataDisk;
+  for (int cd=0; cd<channels_dataDisk.size(); ++cd)
+    {
+      QString cd_c = channels_dataDisk[cd];
+      channames_from_dataDisk << cd_c.replace(" / ","").simplified();
+    }
+  channames_from_dataDisk. removeDuplicates();
+      
+  /** 
   for ( int i=0; i<chann_ranges_from_dataDisk.keys().size(); ++i )
     {
       QString channame_c = chann_ranges_from_dataDisk.keys()[i];
+      QString cell_n     = channame_c.left(1);
 
       //check for actual consistency:
       QStringList channels_dataDisk_mod;
@@ -4261,14 +4337,15 @@ bool US_ExperGuiUpload::protocolToDataDisk( QStringList& msg_to_user )
 	  QString cd_c = channels_dataDisk[cd];
 	  channels_dataDisk_mod << cd_c.replace(" / ","").simplified();
 	}
-      qDebug() << "[Upload:check protocolToDataDisk()] : channame_c, channels_dataDisk_mod -- "
-	       << channame_c << ", " << channels_dataDisk_mod;
+      qDebug() << "[Upload:check protocolToDataDisk()] : channame_c, channels_dataDisk_mod, runTypes_from_dataDisk -- "
+	       << channame_c << ", " << channels_dataDisk_mod << ", " << runTypes_from_dataDisk[ cell_n ];
       if (!channels_dataDisk_mod. contains( channame_c ) )
 	  continue;
       
       if ( !chann_ranges_from_dataDisk[ channame_c ]. isEmpty()  )
 	channames_from_dataDisk << channame_c;
     }
+  ***/
   
   //Cells
   if ( chann_numbers_from_dataDisk.size() != rpCells->used.size() )
@@ -4288,10 +4365,7 @@ bool US_ExperGuiUpload::protocolToDataDisk( QStringList& msg_to_user )
   //Optics
   qDebug() << "chann_numbers_from_dataDisk, rpOptic->chopts.size() -- "
 	   << chann_numbers_from_dataDisk << rpOptic->chopts.size();
-  // int chopts_num = ( !rpRotor-> importData_absorbance_t) ?
-  //   chann_numbers_from_dataDisk.size()*2 : chann_numbers_from_dataDisk.size();
-  //int chopts_num = chann_numbers_from_dataDisk.size();
-
+  
   qDebug() << "channames_from_dataDisk , rpOptic->chopts.size() -- "
 	   << channames_from_dataDisk << rpOptic->chopts.size();
   int chopts_num = channames_from_dataDisk.size();
@@ -4340,7 +4414,8 @@ bool US_ExperGuiUpload::protocolToDataDisk( QStringList& msg_to_user )
   //Ranges
   qDebug() << "channames_from_dataDisk, rpRange->nranges -- "
 	   << channames_from_dataDisk << rpRange->nranges;
-  if ( channames_from_dataDisk.size() != rpRange->nranges )
+  //if ( channames_from_dataDisk.size() != rpRange->nranges )
+  if ( chann_ranges_from_dataDisk.keys().size() != rpRange->nranges )
     {
       msg_to_user << "[Uploaded Data <-> Protocol] Numbers of Range channels are mismatched!";
       return false;

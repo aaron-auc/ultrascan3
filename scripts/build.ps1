@@ -8,9 +8,10 @@
     Uses the same arguments as build.sh on macOS/Linux.
 
 .PARAMETER rebuild
-    Tier 1: Remove the CMake build directory only. vcpkg packages are untouched
-    and restored from binary cache. Use when the build tree is corrupted or you
-    want a clean UltraScan recompile without touching dependencies.
+    Tier 1: Remove the CMake build directory, keeping its vcpkg_installed\
+    dependencies. Use when you want a clean UltraScan recompile without touching
+    dependencies. Does not repair damaged packages -- vcpkg still records them as
+    installed and will not refetch; use -clean for that.
 
 .PARAMETER clean
     Tier 2: Remove build dir + vcpkg buildtrees + installed packages for the
@@ -129,10 +130,10 @@ if (${help}) {
     Write-Host "Usage: build.bat [OPTIONS] [PROFILE]"
     Write-Host ""
     Write-Host "OPTIONS:"
-    Write-Host "  --rebuild                Tier 1: removes the CMake build directory only."
-    Write-Host "                             Fast - vcpkg packages untouched, restored from binary cache."
-    Write-Host "                             Use when the build tree is corrupted or you want a"
-    Write-Host "                             clean UltraScan recompile without touching dependencies."
+    Write-Host "  --rebuild                Tier 1: removes the CMake build directory, keeping its"
+    Write-Host "                             vcpkg_installed\ dependencies. Fast - vcpkg packages"
+    Write-Host "                             untouched. Does not repair damaged packages (vcpkg still"
+    Write-Host "                             records them as installed); use --clean for that."
     Write-Host "  --clean                  Tier 2: removes build dir + vcpkg buildtrees + installed"
     Write-Host "                             packages for the active triplet. Forces vcpkg to reinstall"
     Write-Host "                             all dependencies. Required after vcpkg.json feature changes."
@@ -352,29 +353,6 @@ function Ensure-VcpkgBaselineAvailable {
     exit 1
 }
 
-function Sync-VcpkgRepoToBaseline {
-    param(
-        [string]$RepoRoot,
-        [string]$VcpkgRoot
-    )
-
-    $baseline = Get-BuiltinBaseline -RepoRoot $RepoRoot
-    if (-not $baseline) { return }
-
-    Push-Location $VcpkgRoot
-    try {
-        git checkout --detach $baseline
-        if ($LASTEXITCODE -ne 0) {
-            throw "git checkout --detach $baseline failed"
-        }
-    }
-    finally {
-        Pop-Location
-    }
-
-    Write-Host "vcpkg repo synced to baseline $baseline"
-}
-
 function Test-PathLengthRisk {
     param(
         [string]$RepoRoot,
@@ -434,9 +412,10 @@ Then re-run the build from the shortened path.
 }
 
 # =============================================================================
-# BUILD DIRECTORY
+# BUILD DIRECTORY AND BUILD TYPE
 # =============================================================================
-$BuildDir = Join-Path $SourceRoot "build\$Preset"
+$BuildDir  = Join-Path $SourceRoot "build\$Preset"
+$BuildType = if ($Preset -match "release") { "Release" } else { "Debug" }
 
 # =============================================================================
 # HEADER
@@ -450,6 +429,20 @@ Write-Host ""
 
 $NonInteractive = ($env:CI -eq "true")
 if ($NonInteractive) { Write-Host "Running in CI environment" -ForegroundColor Yellow }
+
+# GitHub-hosted Windows runners have limited free space on C:. Reclaim unused
+# tool stacks and place vcpkg root/downloads/installed state on RUNNER_TEMP
+# before bootstrapping or configuring. The binary cache path is deliberately
+# left unchanged so the workflow cache action and vcpkg continue to agree.
+if ($env:GITHUB_ACTIONS -eq "true") {
+    $PrepareWindowsCi = Join-Path $ScriptDir "prepare-windows-ci.ps1"
+    if (-not (Test-Path $PrepareWindowsCi)) {
+        Write-Host "ERROR: Windows CI preparation script not found: $PrepareWindowsCi" -ForegroundColor Red
+        exit 1
+    }
+    & $PrepareWindowsCi
+    Write-Host ""
+}
 
 Write-Host "Selected build profile : ${profile}"
 $QtLabel = switch ($QtSuffix) {
@@ -719,6 +712,55 @@ function Test-VcpkgRepoClean {
     }
 }
 
+function Get-VcpkgDefaultBranch {
+    param([string]$VcpkgRoot)
+
+    Push-Location $VcpkgRoot
+    try {
+        # Ask the clone's own origin rather than hardcoding a branch name, so this
+        # survives an upstream rename and works for forks pointed at by VCPKG_ROOT.
+        $head = git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $head) {
+            git remote set-head origin --auto 1>$null 2>$null
+            $head = git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
+        }
+
+        if ($head) { return ($head -replace '^origin/', '') }
+        return "master"
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Restore-VcpkgDefaultBranch {
+    param([string]$VcpkgRoot)
+
+    if (-not (Test-VcpkgGitRepo $VcpkgRoot)) { return }
+
+    Push-Location $VcpkgRoot
+    try {
+        git symbolic-ref --quiet HEAD 1>$null 2>$null
+        if ($LASTEXITCODE -eq 0) { return }   # already on a branch
+
+        # A detached HEAD here is usually left over from an older build script that
+        # checked out the manifest baseline. vcpkg.exe must match the checked-out
+        # scripts, so put the repo back on its default branch before bootstrapping.
+        $branch = Get-VcpkgDefaultBranch -VcpkgRoot $VcpkgRoot
+        Write-Warning "$VcpkgRoot is in a detached HEAD state. Restoring branch '$branch'."
+
+        git checkout $branch
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Could not check out '$branch' in $VcpkgRoot." -ForegroundColor Red
+            Write-Host "  Fix the vcpkg clone manually, or delete it and re-run the build."
+            exit 1
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 function Repair-VcpkgRepo {
     param([string]$VcpkgRoot)
 
@@ -728,6 +770,9 @@ function Repair-VcpkgRepo {
     }
 
     Write-Host "Repairing vcpkg repo at $VcpkgRoot ..." -ForegroundColor Yellow
+
+    # reset --hard HEAD below keeps a detached HEAD detached, so get back on a branch first.
+    Restore-VcpkgDefaultBranch -VcpkgRoot $VcpkgRoot
 
     Push-Location $VcpkgRoot
     try {
@@ -793,6 +838,9 @@ if (-not (Test-Path $VcpkgRoot)) {
     }
 }
 
+# Must run before bootstrap: vcpkg.exe is built from whatever is checked out.
+Restore-VcpkgDefaultBranch -VcpkgRoot $VcpkgRoot
+
 if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
     Write-Host "Bootstrapping vcpkg at $VcpkgRoot..."
     Push-Location $VcpkgRoot
@@ -815,7 +863,9 @@ if (-not (Test-Path $VcpkgDownloadsDir)) { New-Item -ItemType Directory -Path $V
 
 $env:VCPKG_ROOT           = $VcpkgRoot
 $env:VCPKG_BINARY_SOURCES = "clear;files,$VcpkgCacheDir,readwrite"
-$env:VCPKG_INSTALLED_DIR  = Join-Path $VcpkgRoot "installed"
+# Cleared, not merely left unset: an inherited value (CI runner, earlier shell)
+# would override vcpkg's build-tree default and re-share the tree.
+$env:VCPKG_INSTALLED_DIR  = $null
 $env:VCPKG_DOWNLOADS      = $VcpkgDownloadsDir
 
 if (-not (Test-Path (Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"))) {
@@ -829,8 +879,10 @@ Write-Host "  cache     : $VcpkgCacheDir"
 Write-Host "  downloads : $VcpkgDownloadsDir"
 Write-Host ""
 
+# Ensure the manifest's dependency baseline exists in the local history.
+# Do not check out that commit: vcpkg.exe must match the currently checked-out
+# scripts and bootstrap files.
 Ensure-VcpkgBaselineAvailable -RepoRoot $SourceRoot -VcpkgRoot $VcpkgRoot
-Sync-VcpkgRepoToBaseline -RepoRoot $SourceRoot -VcpkgRoot $VcpkgRoot
 Write-Host ""
 
 
@@ -849,34 +901,63 @@ function Get-VcpkgTriplet {
     else                   { return "x64-windows" }
 }
 
+# vcpkg installs into build\<preset>\vcpkg_installed, so removing the whole
+# build dir would take the dependencies with it. Tier 1 passes -KeepDeps to
+# hold to its documented promise that vcpkg packages are untouched; tier 2 does
+# not, which is what --clean means.
+#
+# -LiteralPath so a build path containing [ or ] is not glob-expanded. The $null
+# check matters because a second --rebuild finds only vcpkg_installed left, and
+# Remove-Item -Force $null would fail binding and be misreported as a lock.
 function Remove-BuildDir {
-    if (Test-Path $BuildDir) {
-        Write-Host "Removing build directory: $BuildDir"
-        try {
-            Remove-Item -Recurse -Force $BuildDir -ErrorAction Stop
-        } catch {
-            Write-Warning "Initial removal failed: $($_.Exception.Message)"
-            Write-Host "Stopping likely locking processes..."
-            Get-Process -ErrorAction SilentlyContinue | Where-Object {
-                $_.ProcessName -match '^(assistant|designer|linguist|qtdiag|qtplugininfo|cmake|ctest|us_.*|UltraScan.*)$'
-            } | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-            try {
-                Remove-Item -Recurse -Force $BuildDir -ErrorAction Stop
-            } catch {
-                Write-Error "Unable to remove build directory: $BuildDir"
-                Write-Error "A file is still locked. Close any running UltraScan/Qt processes and retry."
-                exit 1
-            }
-        }
-    } else {
+    param([switch]$KeepDeps)
+
+    if (-not (Test-Path $BuildDir)) {
         Write-Host "Build directory does not exist: $BuildDir"
+        return
+    }
+
+    $DepsDir = Join-Path $BuildDir "vcpkg_installed"
+    if ($KeepDeps -and (Test-Path $DepsDir)) {
+        $Targets = Get-ChildItem -Force -LiteralPath $BuildDir |
+                   Where-Object { $_.Name -ne "vcpkg_installed" }
+        Write-Host "Removing build directory (keeping vcpkg_installed): $BuildDir"
+    } else {
+        $Targets = $null
+        Write-Host "Removing build directory: $BuildDir"
+    }
+
+    $Remove = {
+        if ($null -eq $Targets) {
+            Remove-Item -Recurse -Force -LiteralPath $BuildDir -ErrorAction Stop
+        } elseif ($Targets) {
+            Remove-Item -Recurse -Force -LiteralPath $Targets.FullName -ErrorAction Stop
+        }
+    }
+
+    try {
+        & $Remove
+    } catch {
+        Write-Warning "Initial removal failed: $($_.Exception.Message)"
+        Write-Host "Stopping likely locking processes..."
+        Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.ProcessName -match '^(assistant|designer|linguist|qtdiag|qtplugininfo|cmake|ctest|us_.*|UltraScan.*)$'
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        try {
+            & $Remove
+        } catch {
+            Write-Error "Unable to remove build directory: $BuildDir"
+            Write-Error "A file is still locked. Close any running UltraScan/Qt processes and retry."
+            exit 1
+        }
     }
 }
 
+# Installed packages live in build\<preset>\vcpkg_installed and go with the
+# build dir. The shared buildtrees, and any legacy tree left over from when
+# packages did live under VCPKG_ROOT, are what remain to clean here.
 function Remove-VcpkgTriplet {
-    $Triplet = Get-VcpkgTriplet
-
     $VcpkgBuildtrees = Join-Path $VcpkgRoot "buildtrees"
     if (Test-Path $VcpkgBuildtrees) {
         Write-Host "Removing vcpkg buildtrees..."
@@ -884,24 +965,23 @@ function Remove-VcpkgTriplet {
         catch { Write-Warning "Could not fully remove vcpkg buildtrees: $($_.Exception.Message)" }
     }
 
-    # Always wipe the vcpkg bookkeeping directory (status file, .list files,
-    # pending updates). Must be unconditional -- stale 'half-installed' entries
-    # survive even when the triplet dir was removed by a prior clean, causing
-    # vcpkg to fail reading pkgconfig files that no longer exist on next run.
+    # Legacy shared tree, from before packages moved into the build tree:
+    # toolchain.cmake drops the stale cache entry but cannot delete the tree.
+    # Bookkeeping goes unconditionally -- stale 'half-installed' entries outlive a
+    # triplet dir removed by an earlier clean and make vcpkg fail on pkgconfig
+    # files no longer on disk. Delete this block once no checkout predates the move.
     $VcpkgBookkeeping = Join-Path $VcpkgRoot "installed\vcpkg"
     if (Test-Path $VcpkgBookkeeping) {
-        Write-Host "Removing vcpkg installed\vcpkg bookkeeping (will be regenerated)..."
-        try   { Remove-Item -Recurse -Force $VcpkgBookkeeping -ErrorAction Stop }
+        Write-Host "Removing legacy vcpkg bookkeeping (will be regenerated)..."
+        try   { Remove-Item -Recurse -Force -LiteralPath $VcpkgBookkeeping -ErrorAction Stop }
         catch { Write-Warning "Could not fully remove vcpkg bookkeeping: $($_.Exception.Message)" }
     }
 
-    $TripletDir = Join-Path $VcpkgRoot "installed\$Triplet"
+    $TripletDir = Join-Path $VcpkgRoot "installed\$(Get-VcpkgTriplet)"
     if (Test-Path $TripletDir) {
-        Write-Host "Removing vcpkg installed packages for triplet: $Triplet"
-        try   { Remove-Item -Recurse -Force $TripletDir -ErrorAction Stop }
+        Write-Host "Removing legacy vcpkg installed packages for triplet: $TripletDir"
+        try   { Remove-Item -Recurse -Force -LiteralPath $TripletDir -ErrorAction Stop }
         catch { Write-Warning "Could not fully remove triplet dir: $($_.Exception.Message)" }
-    } else {
-        Write-Host "vcpkg installed\$Triplet does not exist -- nothing to remove"
     }
 }
 
@@ -920,7 +1000,7 @@ if (${rebuild} -and -not ${clean}) {
     Write-Host "==========================================" -ForegroundColor Yellow
     Write-Host "Tier 1 rebuild: removing build directory"  -ForegroundColor Yellow
     Write-Host "==========================================" -ForegroundColor Yellow
-    Remove-BuildDir
+    Remove-BuildDir -KeepDeps
     Write-Host "Rebuild clean complete." -ForegroundColor Green
     Write-Host ""
 }
@@ -995,20 +1075,72 @@ Test-PathLengthRisk `
 # NOTE: Do NOT pass -DCMAKE_TOOLCHAIN_FILE here.
 #   toolchain.cmake (set in windows-base preset) handles triplet detection
 #   and includes vcpkg via $env:VCPKG_ROOT which is already exported above.
+#
+# vcpkg manifest install runs automatically during cmake configure, installing
+# all dependencies declared in vcpkg.json for the active feature and triplet.
 # =============================================================================
 Write-Host "Configuring..." -ForegroundColor Cyan
 cmake --preset $Preset -DUS3_PROFILE="${profile}"
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: CMake configuration failed." -ForegroundColor Red; exit $LASTEXITCODE }
 
+# Read back what the toolchain resolved rather than recomputing its rule.
+# Exported unconditionally, matching build.sh: scoping it to the windeployqt
+# check below left it unset for everything downstream on the HPC profile.
+$VcpkgInstalledDir = Join-Path $BuildDir "vcpkg_installed"
+$CacheMatch = Select-String -Path (Join-Path $BuildDir "CMakeCache.txt") `
+    -Pattern '^VCPKG_INSTALLED_DIR:PATH=(.*)$' -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if ($CacheMatch) { $VcpkgInstalledDir = $CacheMatch.Matches.Groups[1].Value }
+$env:VCPKG_INSTALLED_DIR = $VcpkgInstalledDir
+Write-Host "vcpkg installed dir: $VcpkgInstalledDir"
+
+# =============================================================================
+# POST-CONFIGURE: verify windeployqt is present for the target triplet.
+#
+# The vcpkg manifest install ran during cmake configure above.  If windeployqt
+# is still missing, vcpkg.json does not include the Qt tools dependency for the
+# active feature, or vcpkg placed the tools under the host triplet in a
+# cross-compile scenario.  Fail now rather than letting the build produce a
+# broken package.
+# =============================================================================
+if ($profile -ne "HPC") {
+    $TargetTriplet = Get-VcpkgTriplet
+    if ($QtSuffix -eq "-qt6") {
+        $ExpectedTool   = Join-Path $VcpkgInstalledDir "$TargetTriplet\tools\Qt6\bin\windeployqt.exe"
+        $QtToolsFeature = "qt6-app (qttools[assistant])"
+    } else {
+        $ExpectedTool   = Join-Path $VcpkgInstalledDir "$TargetTriplet\tools\qt5-tools\bin\windeployqt.exe"
+        $QtToolsFeature = "qt5-app / qt5-qwt630-app (qt5-tools)"
+    }
+
+    if (-not (Test-Path $ExpectedTool)) {
+        Write-Host ""
+        Write-Host "ERROR: windeployqt.exe not found for $TargetTriplet after cmake configure." -ForegroundColor Red
+        Write-Host "  Expected : $ExpectedTool" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "The vcpkg manifest install ran but did not produce windeployqt.exe" -ForegroundColor Yellow
+        Write-Host "for the target triplet $TargetTriplet." -ForegroundColor Yellow
+        Write-Host "Verify vcpkg.json includes the Qt tools for feature: $QtToolsFeature" -ForegroundColor Yellow
+        Write-Host "Then rerun: scripts\build.bat --arch $Arch$(if (${pkg}) { ' --pkg' })" -ForegroundColor Yellow
+        exit 1
+    }
+}
+
 Write-Host ""
 Write-Host "Building..." -ForegroundColor Cyan
+# Always run a full build first. This mirrors build.sh, which performs a full
+# cmake --build before the package target so all us_*.exe companion programs
+# are compiled and present in bin/ when the staging script's glob runs.
+# package_windows_nsis depends only on deploy_windows -> us, so without this
+# step the other 68 program executables would never be built before staging.
+cmake --build $BuildDir --config $BuildType --parallel $BuildJobs
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Build failed." -ForegroundColor Red; exit $LASTEXITCODE }
+
 if (${pkg}) {
     Write-Host "Building Windows installer..." -ForegroundColor Cyan
-    cmake --build $BuildDir --target package_windows_nsis --parallel $BuildJobs
-} else {
-    cmake --build $BuildDir --parallel $BuildJobs
+    cmake --build $BuildDir --config $BuildType --target package_windows_nsis --parallel $BuildJobs
+    if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Installer build failed." -ForegroundColor Red; exit $LASTEXITCODE }
 }
-if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Build failed." -ForegroundColor Red; exit $LASTEXITCODE }
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Green

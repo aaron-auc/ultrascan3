@@ -10,6 +10,7 @@
 #include "us_license.h"
 #include "us_settings.h"
 #include "us_gui_settings.h"
+#include "us_theme.h"
 #include "us_win_data.h"
 #include "us_defines.h"
 #include "us_revision.h"
@@ -42,6 +43,24 @@ int main( int argc, char* argv[] )
   qputenv("QT_ENABLE_HIGHDPI_SCALING",QByteArray("1"));
   QApplication application( argc, argv );
   application.setApplicationDisplayName( "UltraScan III" );
+
+#ifdef Q_OS_WIN
+  // MariaDB Connector/C on Windows does not fall back to the compiled-in
+  // MARIADB_PLUGINDIR when MYSQL_PLUGIN_DIR is unset: it constructs a bare
+  // filename ("dialog.dll") which Windows cannot find via the standard DLL
+  // search path.  Setting MARIADB_PLUGIN_DIR before any DB connection is
+  // opened makes the connector look in plugins/libmariadb/ relative to the
+  // executable, mirroring the POSIX behaviour.  This does not force PAM
+  // authentication; it only makes auth plugins discoverable if the server
+  // requests one.
+  {
+    const QString pluginDir =
+      QDir( QCoreApplication::applicationDirPath() )
+        .absoluteFilePath( "../plugins/libmariadb" );
+    qputenv( "MARIADB_PLUGIN_DIR",
+             QDir::toNativeSeparators( pluginDir ).toUtf8() );
+  }
+#endif
 
   // Set up language localization
   QString locale = QLocale::system().name();
@@ -92,8 +111,7 @@ int main( int argc, char* argv[] )
 US_Action::US_Action( int i, const QString& text, QObject* parent) 
     : QAction( text, parent ), index( i ) 
 {
-  connect( this, SIGNAL( triggered  ( bool ) ), 
-           this, SLOT  ( onTriggered( bool ) ) );
+   connect( this, &US_Action::triggered, this, &US_Action::onTriggered );
 }
 
 void US_Action::onTriggered( bool ) 
@@ -222,7 +240,9 @@ US_Win::US_Win( QWidget* parent, Qt::WindowFlags flags )
   QMenu* utilities   = new QMenu( tr( "&Utilities" ),   this );
   QMenu* multiwave   = new QMenu( tr( "&Multiwavelength" ),   this );
   QMenu* spectrum    = new QMenu( tr( "&Spectral Analysis" ),   this );
+#ifndef Q_OS_MAC
   addMenu(  P_GETDATA  , tr( "&Data Acquisition"                 ), utilities );
+#endif
   addMenu(  P_VIEWXPN  , tr( "View Raw &Optima Data"             ), utilities );
   addMenu(  P_LEGDATA  , tr( "&Convert Optima Data (Beckman tar.gz) " ), utilities );
   addMenu(  P_CONVERT  , tr( "&Import Experimental Data"         ), utilities );
@@ -307,7 +327,9 @@ US_Win::US_Win( QWidget* parent, Qt::WindowFlags flags )
   menuBar()->addMenu( utilities   );
   menuBar()->addMenu( multiwave   );
   menuBar()->addMenu( simulation  );
+#ifndef Q_OS_MAC
   menuBar()->addMenu( gmp         );
+#endif
   menuBar()->addMenu( database    );
   menuBar()->addMenu( help        );
 
@@ -335,7 +357,7 @@ US_Win::US_Win( QWidget* parent, Qt::WindowFlags flags )
    // get notices if available
    if ( US_Settings::default_data_location() != 2 ) {
       // notices only if location is database
-      connect( &notices_get_url, SIGNAL( downloaded() ), this, SLOT( notices_ready() ), Qt::UniqueConnection );
+      connect( &notices_get_url, &US_GetUrl::downloaded, this, &US_Win::notices_ready, Qt::UniqueConnection );
       notices_get_url.get("https://ultrascan.aucsolutions.com/notices.json");
    }
 }
@@ -401,9 +423,7 @@ void US_Win::addMenu( int index, const QString& label, QMenu* menu )
                              QFont::Normal );
   action->setFont( font );
 #endif
-
-  connect( action, SIGNAL( indexTriggered  ( int ) ), 
-           this,   SLOT  ( onIndexTriggered( int ) ) );
+  connect( action, &US_Action::indexTriggered, this, &US_Win::onIndexTriggered );
 
   menu->addAction( action );
 }
@@ -526,8 +546,7 @@ void US_Win::launch( int index )
   QProcess* process = new QProcess( 0 );
   process->closeReadChannel( QProcess::StandardOutput );
   process->closeReadChannel( QProcess::StandardError );
-  connect ( process, SIGNAL( finished  ( int, QProcess::ExitStatus ) ),
-            this   , SLOT  ( terminated( int, QProcess::ExitStatus ) ) );
+  connect( process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &US_Win::terminated );
 
 #ifdef Q_OS_MAC
    QString procbin = US_Settings::appBaseDir() + "/bin/" + pname;
@@ -636,7 +655,7 @@ void US_Win::splash( void )
   const int w = 710;
 
   bigframe = new QLabel( this );
-  bigframe->setFrameStyle        ( QFrame::Box | QFrame::Raised);
+  bigframe->setFrameStyle        ( QFrame::NoFrame );
   bigframe->setPalette           ( US_GuiSettings::frameColor() );
   bigframe->setGeometry          ( 0, y, w, height );
   bigframe->setAutoFillBackground( true );

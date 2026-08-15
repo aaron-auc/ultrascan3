@@ -230,16 +230,20 @@ if [ "$DISTRO_FAMILY" = "debian" ]; then
   # gperf: required by the Qt5/Qt6 qtbase vcpkg port for keyword hash tables
   # bison: required by libmariadb connector port (SQL parser grammar)
   # flex: required by libmariadb connector port (SQL lexer)
-  # libtime-piece-perl: provides Time::Piece, required by the OpenSSL Configure
-  #   script invoked during vcpkg's openssl port build.  It is a core Perl module
-  #   but is split into a separate package on Ubuntu/Debian and is not installed
-  #   by default on GitHub-hosted Ubuntu 24.04 runners.
+  # perl: provides Time::Piece (used by the OpenSSL Configure script invoked
+  #   during vcpkg's openssl port build). Time::Piece lives in perl-modules-X.YY,
+  #   pulled in by the "perl" metapackage -- NOT by "perl-base", which is all
+  #   that's guaranteed present on minimal/CI images. There is no standalone
+  #   "libtime-piece-perl" package on Ubuntu/Debian (verified: no such package
+  #   exists in any Ubuntu or Debian suite) -- depend on "perl" instead, since
+  #   its name and Time::Piece bundling are stable across releases, unlike the
+  #   versioned perl-modules-X.YY package.
   PKGS_CODEGEN=(
     nasm
     gperf
     bison
     flex
-    libtime-piece-perl
+    perl
   )
 
   # --- Python (Sphinx documentation) ----------------------------------------
@@ -345,9 +349,15 @@ if [ "$DISTRO_FAMILY" = "debian" ]; then
   # --- MPI (optional, --hpc flag) -------------------------------------------
   # Required only for the HPC build profile (mpicxx must be on PATH).
   # Using openmpi as the default; mpich is an acceptable substitute.
+  # libgomp1: OpenMPI's runtime (libmpi.so) links against libgomp for its
+  #   atomics/threading fallback. Not pulled in by build-essential on minimal
+  #   images (Docker/WSL bare Ubuntu), so it must be listed explicitly or
+  #   us_mpi_analysis fails to link/run with "libgomp.so.1: cannot open
+  #   shared object file".
   PKGS_HPC=(
     libopenmpi-dev
     openmpi-bin
+    libgomp1
   )
 
 elif [ "$DISTRO_FAMILY" = "rhel" ]; then
@@ -440,12 +450,19 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   #   which is too old for vcpkg's meson port (requires >= 3.7).  python39 installs
   #   as a parallel alternative; the post-install section below registers it via
   #   update-alternatives so that `python3` resolves to 3.9 for vcpkg and Sphinx.
+  #   Newer RHEL-family releases (e.g. Rocky/RHEL/OL 9) already ship a
+  #   sufficiently new python3 by default and may not even offer a "python39"
+  #   package, so only request it when the currently active python3 is too old
+  #   -- otherwise it shows up as "to install" on every run and can fail outright
+  #   on distros where that package doesn't exist.
   PKGS_PYTHON=(
     python3
     python3-pip
-    python39
-    python39-pip
   )
+  if ! command -v python3 >/dev/null 2>&1 || \
+     ! python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 7) else 1)' 2>/dev/null; then
+    PKGS_PYTHON+=(python39 python39-pip)
+  fi
 
   # --- OpenGL / graphics headers --------------------------------------------
   # mesa-libGL-devel: provides GL/gl.h — RHEL equivalent of libgl-dev
@@ -553,8 +570,11 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   #   On Rocky 8 the wrapper lands in /usr/lib64/openmpi/bin/mpicxx and
   #   /usr/lib64/openmpi/bin is NOT on PATH by default.  We add it explicitly
   #   in the post-install section when --hpc is requested.
+  # libgomp: OpenMPI's runtime (libmpi.so) links against libgomp for its
+  #   atomics/threading fallback (see matching Debian-family comment above).
   PKGS_HPC=(
     openmpi-devel
+    libgomp
   )
 
 fi  # end distro-family package list definitions
@@ -629,7 +649,12 @@ if [ "$DISTRO_FAMILY" = "debian" ]; then
   done
 elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   for pkg in "${ALL_PKGS[@]}"; do
-    if ! rpm -q "$pkg" &>/dev/null; then
+    # Some package names (e.g. "python3" on RHEL/Rocky/OL 8, which is only
+    # provided virtually by the "python36" module package) never match a
+    # plain `rpm -q` by exact name, so this would re-attempt "installing"
+    # them on every run even though they are already satisfied. Fall back
+    # to --whatprovides, which resolves virtual provides as well.
+    if ! rpm -q "$pkg" &>/dev/null && ! rpm -q --whatprovides "$pkg" &>/dev/null; then
       PKGS_TO_INSTALL+=("$pkg")
     fi
   done
@@ -673,12 +698,21 @@ if [ "$DISTRO_FAMILY" = "debian" ]; then
   fi
 
   log "Installing packages..."
+  # set -e already aborts on a failed apt-get, but a bad package name buries
+  # apt's "Unable to locate package" line mid-output -- this wrapper adds a
+  # final, unambiguous failure message naming exactly what didn't install
+  # (rather than the run silently reporting the same packages missing again
+  # on the next invocation, as happened with the now-fixed libtime-piece-perl
+  # name above, which never existed as an apt package on any Ubuntu/Debian
+  # suite).
   if [ "$NON_INTERACTIVE" = true ]; then
     DEBIAN_FRONTEND=noninteractive ${SUDO:+$SUDO} apt-get install -y \
       --no-install-recommends \
-      "${PKGS_TO_INSTALL[@]}"
+      "${PKGS_TO_INSTALL[@]}" \
+      || die "apt-get install failed for: ${PKGS_TO_INSTALL[*]} (check package names for this distro/release)"
   else
-    ${SUDO:+$SUDO} apt-get install -y "${PKGS_TO_INSTALL[@]}"
+    ${SUDO:+$SUDO} apt-get install -y "${PKGS_TO_INSTALL[@]}" \
+      || die "apt-get install failed for: ${PKGS_TO_INSTALL[*]} (check package names for this distro/release)"
   fi
 
 elif [ "$DISTRO_FAMILY" = "rhel" ]; then
@@ -751,11 +785,18 @@ fi
 # with priority 100 (higher than any typical system alternative) and then
 # explicitly set it as the current default so the change takes effect
 # immediately in this shell session without relying on priority ordering.
+# Only touch update-alternatives (which requires sudo) when the currently
+# active python3 is actually too old; otherwise this would re-run on every
+# invocation and prompt for sudo even when nothing needs to change.
 if [ "$DISTRO_FAMILY" = "rhel" ] && [ -x /usr/bin/python3.9 ]; then
-  log "Registering python3.9 as the default python3 via update-alternatives..."
-  ${SUDO:+$SUDO} update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 100
-  ${SUDO:+$SUDO} update-alternatives --set python3 /usr/bin/python3.9
-  log "python3 now resolves to: $(python3 --version 2>&1) at $(command -v python3)"
+  if ! python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 7) else 1)' 2>/dev/null; then
+    log "Registering python3.9 as the default python3 via update-alternatives..."
+    ${SUDO:+$SUDO} update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 100
+    ${SUDO:+$SUDO} update-alternatives --set python3 /usr/bin/python3.9
+    log "python3 now resolves to: $(python3 --version 2>&1) at $(command -v python3)"
+  else
+    log "python3 ($(python3 --version 2>&1)) already satisfies >= 3.7; skipping update-alternatives."
+  fi
 fi
 
 # =============================================================================

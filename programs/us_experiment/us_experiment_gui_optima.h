@@ -321,6 +321,9 @@ class US_ExperGuiRotor : public US_WidgetsDialog
       void init_grevs( void );
       void init_gapprs( void );
       void init_gsmes( void );
+  
+      void setEnabledDisabledAddToORASME( void );
+    
       void addOpertoList( void );
       void removeOperfromList( void );
       void addRevtoList( void );
@@ -329,6 +332,9 @@ class US_ExperGuiRotor : public US_WidgetsDialog
       void removeApprfromList( void );
       void addSmetoList( void );
       void removeSmefromList( void );
+
+   signals:
+      void disableEnable_tabs_dataDisk( bool );
   
 };
 
@@ -663,6 +669,7 @@ class US_ExperGuiOptical : public US_WidgetsDialog
 
    private:
       US_ExperimentMain*   mainw;
+      US_RunProtocol::RunProtoRotor*   rpRotor;  //!< Rotor controls
       US_RunProtocol::RunProtoOptics*  rpOptic;
       QList< QLabel* >        cc_labls;  // Cell label GUI objects
       QList< QButtonGroup* >  cc_osyss;  // Ck-boxes OptSys GUI objects
@@ -1188,6 +1195,7 @@ class US_ExperimentMain : public US_Widgets
       void enable_tabs_buttons( void);  // Slot to enable Tabs and Buttons after run_name is entered
       void set_tabs_buttons_readonly( void );
       void switch_to_run_manager( void );
+      void disableEnable_tabs_for_dataDisk( bool );				
 
 					
    public slots:

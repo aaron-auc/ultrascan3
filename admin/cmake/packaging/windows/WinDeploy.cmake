@@ -299,6 +299,46 @@ else()
 endif()
 
 # =========================================================================
+# 6b) Copy MariaDB Connector/C client-side auth plugins
+#
+#     libmariadb resolves its plugin directory at runtime relative to the
+#     directory containing the loaded DLL (via GetModuleFileName).  The
+#     vcpkg port bakes in the relative path "../plugins/libmariadb", so:
+#
+#       bin/libmariadb.dll  ->  bin/../plugins/libmariadb/
+#
+#     windeployqt has no knowledge of these modules — they must be staged
+#     explicitly.  Source: ${VCPKG_PLUGIN_DIR}/libmariadb/
+#     Mirrors: MacDeploy.cmake section 9e
+# =========================================================================
+set(_MARIADB_PLUGIN_SRC_DIR "")
+if(VCPKG_PLUGIN_DIR AND EXISTS "${VCPKG_PLUGIN_DIR}/libmariadb")
+    set(_MARIADB_PLUGIN_SRC_DIR "${VCPKG_PLUGIN_DIR}/libmariadb")
+endif()
+
+if(_MARIADB_PLUGIN_SRC_DIR)
+    file(MAKE_DIRECTORY "${S_PLUG}/libmariadb")
+    foreach(_mariadb_plugin IN ITEMS "dialog.dll" "mysql_clear_password.dll")
+        set(_mariadb_src "${_MARIADB_PLUGIN_SRC_DIR}/${_mariadb_plugin}")
+        if(EXISTS "${_mariadb_src}")
+            if(NOT EXISTS "${S_PLUG}/libmariadb/${_mariadb_plugin}")
+                message(STATUS "[WinDeploy] Installing MariaDB auth plugin -> plugins/libmariadb/${_mariadb_plugin}")
+                file(COPY "${_mariadb_src}" DESTINATION "${S_PLUG}/libmariadb")
+            else()
+                message(STATUS "[WinDeploy] MariaDB auth plugin already present: plugins/libmariadb/${_mariadb_plugin}")
+            endif()
+        else()
+            message(WARNING "[WinDeploy] MariaDB auth plugin not found: ${_mariadb_src}")
+        endif()
+    endforeach()
+else()
+    message(WARNING
+        "[WinDeploy] MariaDB Connector/C plugins dir not found -- PAM auth may fail at runtime. "
+        "Expected: \${VCPKG_PLUGIN_DIR}/libmariadb/. "
+        "Ensure libmariadb is installed for the active vcpkg triplet.")
+endif()
+
+# =========================================================================
 # 7) Deploy Qt Assistant (help viewer)
 #    Mirrors MacDeploy.cmake section 9.
 # =========================================================================
@@ -373,6 +413,31 @@ else()
     message(STATUS "[WinDeploy] SoMo bin dir not provided or not yet built — skipping SoMo binary staging")
 endif()
 
+
+# =========================================================================
+# 9c) Fetch and stage rasmol (used by SoMo's PDB/molecule viewer)
+#     Mirrors MacDeploy.cmake section 11c. Statically-linked SDL3 build from
+#     https://github.com/ehb54/rasmol (somo-modernize branch); no separate
+#     runtime dependencies. Best-effort: a network failure here does not
+#     fail the packaging build, it just leaves the SoMo molecule-viewer
+#     feature unavailable.
+# =========================================================================
+set(_rasmol_base_url "https://raw.githubusercontent.com/ehb54/rasmol/somo-modernize/binaries/windows-x86_64")
+message(STATUS "[WinDeploy] Fetching rasmol (windows-x86_64) → bin/")
+file(DOWNLOAD "${_rasmol_base_url}/rasmol.exe" "${S_BIN}/rasmol.exe" STATUS _rasmol_dl_status)
+list(GET _rasmol_dl_status 0 _rasmol_dl_code)
+if(_rasmol_dl_code EQUAL 0)
+    file(DOWNLOAD "${_rasmol_base_url}/rasmol.hlp" "${S_BIN}/rasmol.hlp" STATUS _rasmol_hlp_status)
+    list(GET _rasmol_hlp_status 0 _rasmol_hlp_code)
+    if(NOT _rasmol_hlp_code EQUAL 0)
+        message(WARNING "[WinDeploy] Failed to download rasmol.hlp — rasmol help will be unavailable")
+    endif()
+else()
+    list(GET _rasmol_dl_status 1 _rasmol_dl_msg)
+    message(WARNING "[WinDeploy] Failed to download rasmol.exe (${_rasmol_dl_msg}) — SoMo molecule viewer will be unavailable")
+    file(REMOVE "${S_BIN}/rasmol.exe")
+endif()
+
 if(SOMO_LIB_DIR AND EXISTS "${SOMO_LIB_DIR}")
     message(STATUS "[WinDeploy] Staging SoMo DLLs from ${SOMO_LIB_DIR} → bin/")
     file(GLOB _somo_dlls "${SOMO_LIB_DIR}/*.dll")
@@ -407,6 +472,11 @@ if(LICENSE_FILE AND EXISTS "${LICENSE_FILE}")
     if(NOT "${_lic_name}" STREQUAL "license.txt")
         file(RENAME "${STAGE_DIR}/${_lic_name}" "${STAGE_DIR}/license.txt")
     endif()
+endif()
+
+if(VERSION_FILE AND EXISTS "${VERSION_FILE}")
+    message(STATUS "[WinDeploy] Copying VERSION")
+    file(COPY "${VERSION_FILE}" DESTINATION "${STAGE_DIR}")
 endif()
 
 # =========================================================================
