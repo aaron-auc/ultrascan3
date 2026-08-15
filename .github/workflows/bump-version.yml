@@ -18,6 +18,6 @@ permissions:
 
 jobs:
   create-release-pr:
-    uses: ehb54/uslims_version_workflows/.github/workflows/create-bump-pr.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
+    uses: ehb54/uslims_version_workflows/.github/workflows/create-bump-pr.yml@e29dcb80424cbfa306faecefa9ca6075138378cd
     with:
       version: ${{ inputs.version }}

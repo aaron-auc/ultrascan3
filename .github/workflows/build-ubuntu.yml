@@ -132,7 +132,7 @@ jobs:
     if: |
       needs.probe-app.outputs.cache-hit != 'true' ||
       needs.probe-hpc.outputs.cache-hit != 'true'
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-warm-cache.yml@e29dcb80424cbfa306faecefa9ca6075138378cd
     with:
       ref:        ${{ inputs.ref || 'main' }}
       platforms:  "ubuntu-x64 (ubuntu-24.04)"
@@ -145,8 +145,12 @@ jobs:
   build-app:
     name: "Ubuntu APP (ubuntu-24.04, qt6)"
     needs: [probe-app, probe-hpc, warm-if-needed]
-    if: ${{ !cancelled() }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.probe-app.result == 'success' &&
+      (needs.probe-app.outputs.cache-hit == 'true' || needs.warm-if-needed.result == 'success')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@e29dcb80424cbfa306faecefa9ca6075138378cd
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
@@ -161,8 +165,12 @@ jobs:
   build-hpc:
     name: "Ubuntu HPC (ubuntu-24.04, qt6)"
     needs: [probe-app, probe-hpc, warm-if-needed]
-    if: ${{ !cancelled() }}
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@97b2e87ae816914ff0ee8317d5a8f4af85672ca3
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.probe-hpc.result == 'success' &&
+      (needs.probe-hpc.outputs.cache-hit == 'true' || needs.warm-if-needed.result == 'success')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@e29dcb80424cbfa306faecefa9ca6075138378cd
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04

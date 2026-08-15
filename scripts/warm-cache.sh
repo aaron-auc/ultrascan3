@@ -415,7 +415,55 @@ done
 echo "PATH=$PATH"
 echo ""
 
-"$US3_VCPKG_ROOT/vcpkg" install "${VCPKG_ARGS[@]}"
+VCPKG_RETRY_MAX_ATTEMPTS="${VCPKG_RETRY_MAX_ATTEMPTS:-5}"
+VCPKG_RETRY_BASE_DELAY_SECONDS="${VCPKG_RETRY_BASE_DELAY_SECONDS:-60}"
+
+if ! [[ "$VCPKG_RETRY_MAX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: VCPKG_RETRY_MAX_ATTEMPTS must be a positive integer." >&2
+  exit 1
+fi
+if ! [[ "$VCPKG_RETRY_BASE_DELAY_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: VCPKG_RETRY_BASE_DELAY_SECONDS must be a positive integer." >&2
+  exit 1
+fi
+
+# vcpkg retries individual downloads, but those retries are intentionally
+# short. Add a stage-level retry for transient upstream/network failures so a
+# brief source-host outage does not discard hours of dependency work. The
+# binary and download directories remain in place between attempts, allowing
+# vcpkg to resume from everything that completed successfully.
+VCPKG_INSTALL_LOG="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/us3-vcpkg-install-stage-${STAGE}.log"
+VCPKG_ATTEMPT=1
+
+while true; do
+  echo "vcpkg install attempt ${VCPKG_ATTEMPT}/${VCPKG_RETRY_MAX_ATTEMPTS}"
+
+  set +e
+  "$US3_VCPKG_ROOT/vcpkg" install "${VCPKG_ARGS[@]}" 2>&1 | tee "$VCPKG_INSTALL_LOG"
+  VCPKG_STATUS=${PIPESTATUS[0]}
+  set -e
+
+  if [ "$VCPKG_STATUS" -eq 0 ]; then
+    break
+  fi
+
+  if ! grep -Eqi \
+    'curl operation failed|download failed|failed to download|response code (408|429|5[0-9][0-9])|timed out|could not resolve host|connection reset|failed to connect' \
+    "$VCPKG_INSTALL_LOG"; then
+    echo "vcpkg failed with a non-transient error; not retrying." >&2
+    exit "$VCPKG_STATUS"
+  fi
+
+  if [ "$VCPKG_ATTEMPT" -ge "$VCPKG_RETRY_MAX_ATTEMPTS" ]; then
+    echo "vcpkg still has download failures after ${VCPKG_ATTEMPT} attempts." >&2
+    exit "$VCPKG_STATUS"
+  fi
+
+  VCPKG_RETRY_DELAY=$((VCPKG_RETRY_BASE_DELAY_SECONDS * (1 << (VCPKG_ATTEMPT - 1))))
+  echo "Transient download failure detected; retrying in ${VCPKG_RETRY_DELAY} seconds..." >&2
+  sleep "$VCPKG_RETRY_DELAY"
+  VCPKG_ATTEMPT=$((VCPKG_ATTEMPT + 1))
+done
 
 echo ""
 echo "Stage ${STAGE} complete."
