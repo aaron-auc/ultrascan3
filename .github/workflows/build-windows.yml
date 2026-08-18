@@ -130,6 +130,7 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
+          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 1
 
       - name: Warm qtbase
@@ -137,6 +138,7 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
+          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 2
 
       - name: Warm qtmultimedia and qtdeclarative
@@ -144,6 +146,7 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
+          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 3
 
       - name: Warm remaining Qt and database libraries
@@ -151,6 +154,7 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
+          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 4
 
       - name: Warm Qwt dependencies
@@ -158,6 +162,7 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
+          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 5
 
       - name: Save completed Windows cache
