@@ -65,16 +65,27 @@ if (-not $env:RUNNER_TEMP) {
     throw "RUNNER_TEMP is not set on the GitHub Actions runner."
 }
 
-$ScratchRoot = Join-Path $env:RUNNER_TEMP "us3-windows"
-New-Item -ItemType Directory -Force -Path $ScratchRoot | Out-Null
+# Qt's vcpkg buildtrees generate deeply nested object/PDB paths (port name,
+# triplet, source subdirectory, CMakeFiles/<target>.dir, then the source
+# filename twice over for autogen targets). A path rooted under RUNNER_TEMP
+# (e.g. D:\a\_temp\us3-windows\vcpkg\buildtrees\...) leaves too little of the
+# 260-character MAX_PATH budget and cl.exe fails with C1083 "Cannot open
+# compiler generated file: ''" on the longest generated filenames. Root vcpkg
+# directly off the runner-temp drive instead to keep as much budget as
+# possible for the parts of the path vcpkg/Qt control.
+$RunnerTempDrive = (Split-Path -Qualifier $env:RUNNER_TEMP)
+if (-not $RunnerTempDrive) {
+    throw "Could not determine the drive letter of RUNNER_TEMP ($env:RUNNER_TEMP)."
+}
 
 if (-not $env:US3_VCPKG_ROOT) {
-    $env:US3_VCPKG_ROOT = Join-Path $ScratchRoot "vcpkg"
+    $env:US3_VCPKG_ROOT = "$RunnerTempDrive\v"
 }
+New-Item -ItemType Directory -Force -Path $env:US3_VCPKG_ROOT | Out-Null
 
 $LegacyDownloads = Join-Path $HOME "vcpkg-downloads"
 if (-not $env:US3_VCPKG_DOWNLOADS -or $env:US3_VCPKG_DOWNLOADS -eq $LegacyDownloads) {
-    $env:US3_VCPKG_DOWNLOADS = Join-Path $ScratchRoot "vcpkg-downloads"
+    $env:US3_VCPKG_DOWNLOADS = "$RunnerTempDrive\d"
 }
 
 New-Item -ItemType Directory -Force -Path $env:US3_VCPKG_DOWNLOADS | Out-Null
