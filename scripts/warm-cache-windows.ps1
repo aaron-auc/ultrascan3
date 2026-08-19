@@ -43,7 +43,9 @@ $VcpkgCache = if ($env:US3_VCPKG_CACHE) {
     Join-Path $HOME ".vcpkg-cache"
 }
 $VcpkgDownloads = $env:US3_VCPKG_DOWNLOADS
-$InstallRoot = Join-Path $env:RUNNER_TEMP "us3-windows\vcpkg-installed-warm"
+# Keep this short (see prepare-windows-ci.ps1) so vcpkg's generated build
+# paths stay under Windows' 260-character MAX_PATH limit.
+$InstallRoot = "$(Split-Path -Qualifier $env:RUNNER_TEMP)\i"
 
 New-Item -ItemType Directory -Force -Path $VcpkgCache, $VcpkgDownloads, $InstallRoot | Out-Null
 
