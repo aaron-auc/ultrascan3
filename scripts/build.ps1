@@ -122,6 +122,7 @@ param(
 $DocsBuilt = $true
 $DocsStatusMessage = ""
 $profile = $profile.ToUpperInvariant()
+$RequireHelpFiles = ${pkg} -and $profile -eq "APP"
 
 # =============================================================================
 # HELP
@@ -525,6 +526,19 @@ if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
 # Sphinx via pip if sphinx-build is still absent, matching the behaviour of
 # build.sh on Linux/macOS.
 # =============================================================================
+function Add-PythonScriptsToPath {
+    param([string]$PythonCommand)
+
+    $ScriptsDir = & $PythonCommand -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+    if ($LASTEXITCODE -eq 0 -and $ScriptsDir) {
+        $ScriptsDir = "$ScriptsDir".Trim()
+        if ((Test-Path $ScriptsDir) -and -not (($env:PATH -split ';') -contains $ScriptsDir)) {
+            $env:PATH = "$ScriptsDir;$env:PATH"
+            Write-Host "Added Python scripts directory to PATH: $ScriptsDir"
+        }
+    }
+}
+
 if (-not (Get-Command sphinx-build -ErrorAction SilentlyContinue)) {
     $DocsBuilt = $false
     $SphinxRequirements = Join-Path $SourceRoot "doc\manual\source\requirements.txt"
@@ -534,13 +548,18 @@ if (-not (Get-Command sphinx-build -ErrorAction SilentlyContinue)) {
                  elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" }
                  else { $null }
         if ($PyCmd) {
-            & $PyCmd -m pip install -q -r $SphinxRequirements 2>$null
-            if (Get-Command sphinx-build -ErrorAction SilentlyContinue) {
+            & $PyCmd -m pip install -r $SphinxRequirements
+            $PipExitCode = $LASTEXITCODE
+            Add-PythonScriptsToPath -PythonCommand $PyCmd
+            if ($PipExitCode -ne 0) {
+                $DocsStatusMessage = "Documentation not built: pip install failed with exit code $PipExitCode."
+                Write-Host "ERROR: $DocsStatusMessage" -ForegroundColor Red
+            } elseif (Get-Command sphinx-build -ErrorAction SilentlyContinue) {
                 Write-Host "sphinx-build installed successfully." -ForegroundColor Green
                 $DocsBuilt = $true
             } else {
                 $DocsStatusMessage = "Documentation not built: sphinx-build not found after pip install."
-                Write-Host "WARNING: sphinx-build still not found. Help files will not be generated." -ForegroundColor Yellow
+                Write-Host "ERROR: sphinx-build is still unavailable after a successful pip install." -ForegroundColor Red
             }
         } else {
             $DocsStatusMessage = "Documentation not built: Python not found."
@@ -558,10 +577,23 @@ if (-not (Get-Command sphinx-build -ErrorAction SilentlyContinue)) {
         $PyCmd = if (Get-Command py -ErrorAction SilentlyContinue) { "py" }
                  elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" }
                  else { $null }
-        if ($PyCmd) { & $PyCmd -m pip install -q -r $SphinxRequirements 2>$null }
+        if ($PyCmd) {
+            & $PyCmd -m pip install -r $SphinxRequirements
+            if ($LASTEXITCODE -ne 0) {
+                $DocsBuilt = $false
+                $DocsStatusMessage = "Documentation dependencies could not be updated (pip exit code $LASTEXITCODE)."
+                Write-Host "ERROR: $DocsStatusMessage" -ForegroundColor Red
+            }
+        }
     }
     Write-Host "sphinx-build is available: $(Get-Command sphinx-build | Select-Object -ExpandProperty Source)"
     Write-Host ""
+}
+
+if ($RequireHelpFiles -and -not $DocsBuilt) {
+    Write-Host "ERROR: Windows APP installers require manual.qch and manual.qhc." -ForegroundColor Red
+    Write-Host "       Resolve the Sphinx error above; packaging will not continue without application help." -ForegroundColor Red
+    exit 1
 }
 
 # =============================================================================

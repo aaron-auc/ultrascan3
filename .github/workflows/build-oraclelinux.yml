@@ -130,7 +130,7 @@ jobs:
       !cancelled() &&
       needs.probe-app.result == 'success' &&
       (needs.probe-app.outputs.cache-hit == 'true' || needs.warm-if-needed.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@e29dcb80424cbfa306faecefa9ca6075138378cd
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@7a59745c399d052e20a0a196f1d60f55dd10c2c1
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
@@ -139,6 +139,7 @@ jobs:
       profile:                 APP
       clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-oraclelinux8-{0}', github.run_id) }}
+      artifact_platform_label: RHEL-8-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
       require_exact_cache_hit: true
       save_cache:              false
@@ -151,7 +152,7 @@ jobs:
       !cancelled() &&
       needs.probe-hpc.result == 'success' &&
       (needs.probe-hpc.outputs.cache-hit == 'true' || needs.warm-if-needed.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@e29dcb80424cbfa306faecefa9ca6075138378cd
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@7a59745c399d052e20a0a196f1d60f55dd10c2c1
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
@@ -160,6 +161,7 @@ jobs:
       profile:                 HPC
       clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ format('{0}-HPC', inputs.artifact_name_prefix || format('nightly-oraclelinux8-{0}', github.run_id)) }}
+      artifact_platform_label: RHEL-8-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
       require_exact_cache_hit: true
       save_cache:              false

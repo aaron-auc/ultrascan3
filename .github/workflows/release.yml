@@ -128,25 +128,25 @@ jobs:
           echo "Staging release assets..."
 
           cp_first_find "UltraScan3-macos-installer-arm64-${VERSION}.pkg" \
-            find artifacts -type f -path '*release-*-arm-macos-15-*/*' -name '*.pkg'
+            find artifacts -type f -path '*release-*-macOS-arm64/*' -name '*.pkg'
 
           cp_first_find "UltraScan3-macos-installer-x86_64-${VERSION}.pkg" \
-            find artifacts -type f -path '*release-*-macos-15-intel-*/*' -name '*.pkg'
+            find artifacts -type f -path '*release-*-macOS-x86_64/*' -name '*.pkg'
 
           cp_first_find "us3-Windows-x86_64-${VERSION}-setup.exe" \
-            find artifacts -type f -path '*release-*-windows-2022-*/*' -name '*.exe'
+            find artifacts -type f -path '*release-*-Windows-x86_64/*' -name '*.exe'
 
           cp_first_find "us3-ubuntu-24.04-x86_64-${VERSION}.tar.xz" \
-            find artifacts -type f -path '*release-*-ubuntu-24.04-*/*' ! -path '*HPC*' -name '*.tar.xz'
+            find artifacts -type f -path '*release-*-Ubuntu-24.04-x86_64/*' ! -path '*HPC*' -name '*.tar.xz'
 
           cp_first_find "us3-HPC-ubuntu-24.04-x86_64-${VERSION}.tar.xz" \
-            find artifacts -type f -path '*release-*-HPC-ubuntu-24.04-*/*' -name '*.tar.xz'
+            find artifacts -type f -path '*release-*-HPC-Ubuntu-24.04-x86_64/*' -name '*.tar.xz'
 
           cp_first_find "us3-redhat-8.10-x86_64-${VERSION}.tar.xz" \
-            find artifacts -type f -path '*release-*-oraclelinux8-*/*' ! -path '*HPC*' -name '*.tar.xz'
+            find artifacts -type f -path '*release-*-RHEL-8-x86_64/*' ! -path '*HPC*' -name '*.tar.xz'
 
           cp_first_find "us3-HPC-redhat-8.10-x86_64-${VERSION}.tar.xz" \
-            find artifacts -type f -path '*release-*-HPC-oraclelinux8-*/*' -name '*.tar.xz'
+            find artifacts -type f -path '*release-*-HPC-RHEL-8-x86_64/*' -name '*.tar.xz'
 
           echo "Assets ready:"
           ls -lh release-assets/

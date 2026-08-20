@@ -7,7 +7,8 @@ name: UltraScan3 On-Demand Build
 # independently. Windows goes direct to build with no probe/warm phase.
 #
 # Inputs: ref (branch/tag/SHA), platforms (single, group, or all), clean tier,
-#         artifact retention. All artifacts are prefixed with ondemand-<run>.
+#         artifact retention. Artifact names include the UltraScan version,
+#         workflow build number, commit, and platform.
 # ============================================================================
 
 run-name: "On-Demand [${{ inputs.ref }}] ${{ inputs.platforms }} by @${{ github.actor }}"
@@ -61,8 +62,34 @@ permissions:
 
 jobs:
 
+  metadata:
+    name: "Resolve build identity"
+    runs-on: ubuntu-24.04
+    outputs:
+      version:   ${{ steps.identity.outputs.version }}
+      short_sha: ${{ steps.identity.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Read version and commit
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < VERSION)
+          if [[ ! "$version" =~ ^[0-9A-Za-z._-]+$ ]]; then
+            echo "Invalid VERSION value for an artifact name: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+
   ubuntu:
     name: "Ubuntu 24.04 (APP + HPC)"
+    needs: metadata
     if: |
       inputs.platforms == 'all'    ||
       inputs.platforms == 'ubuntu' ||
@@ -71,12 +98,13 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
+      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
     secrets: inherit
 
   macos-arm:
     name: "macOS ARM (APP)"
+    needs: metadata
     if: |
       inputs.platforms == 'all'       ||
       inputs.platforms == 'macos-arm' ||
@@ -85,12 +113,13 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
+      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
     secrets: inherit
 
   macos-intel:
     name: "macOS Intel (APP)"
+    needs: metadata
     if: |
       inputs.platforms == 'all'         ||
       inputs.platforms == 'macos-intel' ||
@@ -99,12 +128,13 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
+      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
     secrets: inherit
 
   windows:
     name: "Windows x64 (APP)"
+    needs: metadata
     if: |
       inputs.platforms == 'all'     ||
       inputs.platforms == 'windows'
@@ -112,12 +142,13 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
+      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
     secrets: inherit
 
   oraclelinux8:
     name: "Oracle Linux 8 x64 (APP + HPC)"
+    needs: metadata
     if: |
       inputs.platforms == 'all'         ||
       inputs.platforms == 'oraclelinux8' ||
@@ -126,6 +157,6 @@ jobs:
     with:
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('ondemand-{0}-{1}', github.run_number, inputs.ref) }}
+      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
     secrets: inherit

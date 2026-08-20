@@ -281,25 +281,25 @@ jobs:
           echo "Staging release assets (label: ${LABEL})..."
 
           # macOS artifacts (pkg, not .tar.xz)
-          cp_first "artifacts/nightly-*-arm-macos-15-[0-9]*/UltraScan3-*-macOS.pkg" \
+          cp_first "artifacts/nightly-*-macOS-arm64/UltraScan3-*-macOS.pkg" \
             "UltraScan3-macos-installer-arm64-${LABEL}.pkg"
-          cp_first "artifacts/nightly-*-macos-15-intel-*/UltraScan3-*-macOS.pkg" \
+          cp_first "artifacts/nightly-*-macOS-x86_64/UltraScan3-*-macOS.pkg" \
             "UltraScan3-macos-installer-x86_64-${LABEL}.pkg"
 
           # Windows (exe)
-          cp_first "artifacts/nightly-*-windows-2022-*/UltraScan3-*-Windows.exe" \
+          cp_first "artifacts/nightly-*-Windows-x86_64/UltraScan3-*-Windows.exe" \
             "us3-Windows-x86_64-${LABEL}-setup.exe"
 
           # Ubuntu 24.04 (.tar.xz from build system)
-          cp_first "artifacts/nightly-*-ubuntu-24.04-[0-9]*/UltraScan3-*-Linux-*.tar.xz" \
+          cp_first "artifacts/nightly-*-Ubuntu-24.04-x86_64/UltraScan3-*-Linux-*.tar.xz" \
             "us3-ubuntu-24.04-x86_64-${LABEL}.tar.xz" "-HPC-"
-          cp_first "artifacts/nightly-*-HPC-ubuntu-24.04-[0-9]*/UltraScan3-HPC-*-Linux-*.tar.xz" \
+          cp_first "artifacts/nightly-*-HPC-Ubuntu-24.04-x86_64/UltraScan3-HPC-*-Linux-*.tar.xz" \
             "us3-HPC-ubuntu-24.04-x86_64-${LABEL}.tar.xz"
 
           # Oracle Linux 8 / RHEL 8 (.tar.xz from build system)
-          cp_first "artifacts/nightly-*-oraclelinux8-[0-9]*/UltraScan3-*-Linux-*.tar.xz" \
+          cp_first "artifacts/nightly-*-RHEL-8-x86_64/UltraScan3-*-Linux-*.tar.xz" \
             "us3-redhat-8.10-x86_64-${LABEL}.tar.xz" "-HPC-"
-          cp_first "artifacts/nightly-*-HPC-oraclelinux8-[0-9]*/UltraScan3-HPC-*-Linux-*.tar.xz" \
+          cp_first "artifacts/nightly-*-HPC-RHEL-8-x86_64/UltraScan3-HPC-*-Linux-*.tar.xz" \
             "us3-HPC-redhat-8.10-x86_64-${LABEL}.tar.xz"
 
           echo "Assets ready:"
