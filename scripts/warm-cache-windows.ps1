@@ -82,7 +82,16 @@ if (-not (Test-Path $VcpkgExe)) {
 $env:VCPKG_ROOT = $VcpkgRoot
 $env:VCPKG_DOWNLOADS = $VcpkgDownloads
 $env:VCPKG_BINARY_SOURCES = "clear;files,$VcpkgCache,readwrite"
-$env:VCPKG_MAX_CONCURRENCY = if ($env:US3_BUILD_JOBS) { $env:US3_BUILD_JOBS } else { "4" }
+$BuildJobs = if ($env:US3_BUILD_JOBS) {
+    $ParsedJobs = 0
+    if (-not [int]::TryParse($env:US3_BUILD_JOBS, [ref]$ParsedJobs) -or $ParsedJobs -lt 1) {
+        throw "US3_BUILD_JOBS must be a positive integer; received '$env:US3_BUILD_JOBS'."
+    }
+    $ParsedJobs
+} else {
+    [Environment]::ProcessorCount
+}
+$env:VCPKG_MAX_CONCURRENCY = [string]$BuildJobs
 
 $Arguments = @(
     "install",
@@ -105,6 +114,7 @@ Write-Host "Root      : $VcpkgRoot"
 Write-Host "Install   : $InstallRoot"
 Write-Host "Downloads : $VcpkgDownloads"
 Write-Host "Cache     : $VcpkgCache"
+Write-Host "Jobs      : $BuildJobs logical processor(s)"
 
 Push-Location $RepoRoot
 try {

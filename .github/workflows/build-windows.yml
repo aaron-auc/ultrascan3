@@ -86,7 +86,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          CACHE_KEY: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          CACHE_KEY: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
         run: |
           $ErrorActionPreference = "Stop"
           $Json = gh cache list --repo "${{ github.repository }}" --key $env:CACHE_KEY --limit 10 --json id,key,sizeInBytes
@@ -111,10 +111,12 @@ jobs:
   # --------------------------------------------------------------------------
   # PHASE 2 — CONDITIONAL STAGED WARM
   # The vcpkg install uses --clean-after-build and D:-backed runner.temp state.
-  # A final immutable cache is saved only when all five stages succeed.
+  # A checkpoint after stage 3 keeps a cold two-core build below GitHub's
+  # six-hour per-job limit. The second job restores it and publishes the final
+  # immutable cache after stages 4 and 5 succeed.
   # --------------------------------------------------------------------------
-  warm-if-needed:
-    name: "Warm Windows cache (if missing or invalid)"
+  warm-through-stage3:
+    name: "Warm Windows cache (stages 1-3)"
     needs: probe-app
     if: needs.probe-app.outputs.cache-valid != 'true'
     runs-on: windows-2022
@@ -125,12 +127,22 @@ jobs:
           ref: ${{ inputs.ref || 'main' }}
           fetch-depth: 1
 
+      # Seed a new dependency fingerprint with the most recent binary cache.
+      # vcpkg's package ABI hashes reject incompatible archives and reuse the
+      # unchanged ones, avoiding a complete Qt rebuild after a dependency edit.
+      - name: Seed Windows cache from compatible packages
+        uses: actions/cache/restore@v5
+        with:
+          path: C:\Users\runneradmin\.vcpkg-cache
+          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
+          restore-keys: |
+            vcpkg-windows-2022-qt6-APP-
+
       - name: Warm base dependencies
         shell: pwsh
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 1
 
       - name: Warm qtbase
@@ -138,7 +150,6 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 2
 
       - name: Warm qtmultimedia and qtdeclarative
@@ -146,15 +157,44 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 3
+
+      - name: Save stage 3 Windows cache checkpoint
+        if: success()
+        uses: actions/cache/save@v5
+        with:
+          path: C:\Users\runneradmin\.vcpkg-cache
+          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}-stage3
+
+  warm-through-stage5:
+    name: "Warm Windows cache (stages 4-5)"
+    needs: [probe-app, warm-through-stage3]
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.probe-app.result == 'success' &&
+      needs.probe-app.outputs.cache-valid != 'true' &&
+      needs.warm-through-stage3.result == 'success'
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+          fetch-depth: 1
+
+      - name: Restore stage 3 Windows cache checkpoint
+        uses: actions/cache/restore@v5
+        with:
+          path: C:\Users\runneradmin\.vcpkg-cache
+          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}-stage3
+          fail-on-cache-miss: true
 
       - name: Warm remaining Qt and database libraries
         shell: pwsh
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 4
 
       - name: Warm Qwt dependencies
@@ -162,7 +202,6 @@ jobs:
         env:
           CI: "true"
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-          US3_BUILD_JOBS: "2"
         run: scripts\warm-cache-windows.ps1 -Stage 5
 
       - name: Save completed Windows cache
@@ -170,7 +209,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'admin/cmake/**', 'CMakeLists.txt') }}
+          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
 
   # --------------------------------------------------------------------------
   # PHASE 3 — BUILD
@@ -179,13 +218,13 @@ jobs:
   # --------------------------------------------------------------------------
   build-app:
     name: "Windows APP (windows-2022, qt6)"
-    needs: [probe-app, warm-if-needed]
+    needs: [probe-app, warm-through-stage3, warm-through-stage5]
     if: |
       always() &&
       !cancelled() &&
       needs.probe-app.result == 'success' &&
-      (needs.probe-app.outputs.cache-valid == 'true' || needs.warm-if-needed.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@7a59745c399d052e20a0a196f1d60f55dd10c2c1
+      (needs.probe-app.outputs.cache-valid == 'true' || needs.warm-through-stage5.result == 'success')
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@42e4e94ed2a4ff997a15640dcb70fe3fd41c011d
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  windows-2022
