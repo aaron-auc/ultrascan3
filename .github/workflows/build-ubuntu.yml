@@ -150,7 +150,7 @@ jobs:
       !cancelled() &&
       needs.probe-app.result == 'success' &&
       (needs.probe-app.outputs.cache-hit == 'true' || needs.warm-if-needed.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@42e4e94ed2a4ff997a15640dcb70fe3fd41c011d
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@7bc178a9ea60d6118adae2ceb3a455ff4dd22173
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
@@ -171,7 +171,7 @@ jobs:
       !cancelled() &&
       needs.probe-hpc.result == 'success' &&
       (needs.probe-hpc.outputs.cache-hit == 'true' || needs.warm-if-needed.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@42e4e94ed2a4ff997a15640dcb70fe3fd41c011d
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@7bc178a9ea60d6118adae2ceb3a455ff4dd22173
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  ubuntu-24.04
