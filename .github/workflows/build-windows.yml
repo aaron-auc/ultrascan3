@@ -204,6 +204,21 @@ jobs:
           US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
         run: scripts\warm-cache-windows.ps1 -Stage 5
 
+      # The restored checkpoint is no longer needed once all packages exist in
+      # this runner's local cache. Delete it before saving the larger final key
+      # so both copies do not compete for the repository's cache quota.
+      - name: Delete stage 3 Windows cache checkpoint
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_KEY: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}-stage3
+        run: |
+          $ErrorActionPreference = "Stop"
+          gh cache delete $env:CACHE_KEY --repo "${{ github.repository }}"
+          if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Stage 3 checkpoint was already absent or could not be deleted; continuing with the final cache save."
+          }
+
       - name: Save completed Windows cache
         if: success()
         uses: actions/cache/save@v5
@@ -224,7 +239,7 @@ jobs:
       !cancelled() &&
       needs.probe-app.result == 'success' &&
       (needs.probe-app.outputs.cache-valid == 'true' || needs.warm-through-stage5.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@7bc178a9ea60d6118adae2ceb3a455ff4dd22173
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@addad8c9ca5d1a58dd1c2b20f070f37dfe3ca13a
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  windows-2022

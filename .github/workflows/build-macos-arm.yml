@@ -110,7 +110,7 @@ jobs:
       !cancelled() &&
       needs.probe-app.result == 'success' &&
       (needs.probe-app.outputs.cache-hit == 'true' || needs.warm-if-needed.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@7bc178a9ea60d6118adae2ceb3a455ff4dd22173
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@addad8c9ca5d1a58dd1c2b20f070f37dfe3ca13a
     with:
       ref:                     ${{ inputs.ref || 'main' }}
       runner:                  macos-15

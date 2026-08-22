@@ -656,8 +656,8 @@ fi
 # RHEL/Fedora don't use the PEP 668 externally-managed marker so the flag is
 # not needed there and older pip versions will error on it.
 _pip_break_flag=""
-if command -v pip3 &>/dev/null; then
-  if pip3 install --break-system-packages --dry-run pip &>/dev/null 2>&1; then
+if python3 -m pip --version &>/dev/null; then
+  if python3 -m pip install --break-system-packages --dry-run pip &>/dev/null 2>&1; then
     _pip_break_flag="--break-system-packages"
   fi
 fi
@@ -667,11 +667,11 @@ fi
 # only unnecessary but actively rejected. Outside CI, --user installs to
 # ~/.local which keeps the system Python clean.
 _pip_install() {
-  if command -v pip3 &>/dev/null; then
+  if python3 -m pip --version &>/dev/null; then
     if [ "${CI:-false}" = "true" ]; then
-      pip3 install ${_pip_break_flag:+$_pip_break_flag} -q "$@" 2>/dev/null || true
+      python3 -m pip install ${_pip_break_flag:+$_pip_break_flag} -q "$@" 2>/dev/null || true
     else
-      pip3 install ${_pip_break_flag:+$_pip_break_flag} --user -q "$@" 2>/dev/null || true
+      python3 -m pip install ${_pip_break_flag:+$_pip_break_flag} --user -q "$@" 2>/dev/null || true
     fi
   fi
 }
@@ -704,7 +704,7 @@ _add_user_bin_to_path
 
 if ! command -v sphinx-build &>/dev/null; then
   echo "sphinx-build not found - attempting to install from requirements.txt..."
-  if [ -f "$SPHINX_REQUIREMENTS" ] && command -v pip3 &>/dev/null; then
+  if [ -f "$SPHINX_REQUIREMENTS" ] && python3 -m pip --version &>/dev/null; then
     _pip_install -r "$SPHINX_REQUIREMENTS"
     _add_user_bin_to_path
     if command -v sphinx-build &>/dev/null; then
@@ -723,6 +723,11 @@ else
     _pip_install -r "$SPHINX_REQUIREMENTS"
   fi
   echo "sphinx-build is available: $(command -v sphinx-build)"
+fi
+
+if [ "$BUILD_PKG" = true ] && [ "$PROFILE" = "APP" ] && ! command -v sphinx-build &>/dev/null; then
+  echo "ERROR: APP packages require Sphinx so manual.qch and manual.qhc can be generated."
+  exit 1
 fi
 
 # =============================================================================
