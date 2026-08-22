@@ -894,42 +894,8 @@ $VcpkgDownloadsDir = if ($env:US3_VCPKG_DOWNLOADS) { $env:US3_VCPKG_DOWNLOADS } 
 if (-not (Test-Path $VcpkgDownloadsDir)) { New-Item -ItemType Directory -Path $VcpkgDownloadsDir -Force | Out-Null }
 
 $env:VCPKG_ROOT           = $VcpkgRoot
-
-# CI can opt into vcpkg's native package-level NuGet cache. Each completed
-# package is published independently, so completed dependency work survives a
-# later timeout. Local builds continue to use the filesystem cache by default.
-$NuGetSettingsPresent = $env:US3_VCPKG_NUGET_SOURCE -or
-                        $env:US3_VCPKG_NUGET_USER -or
-                        $env:US3_VCPKG_NUGET_TOKEN
-if ($NuGetSettingsPresent) {
-    if (-not $env:US3_VCPKG_NUGET_SOURCE -or
-        -not $env:US3_VCPKG_NUGET_USER -or
-        -not $env:US3_VCPKG_NUGET_TOKEN) {
-        throw "US3_VCPKG_NUGET_SOURCE, US3_VCPKG_NUGET_USER, and US3_VCPKG_NUGET_TOKEN must all be set."
-    }
-
-    $NuGetSourceName = "UltraScanGitHub"
-    $NuGetExe = (& (Join-Path $VcpkgRoot "vcpkg.exe") fetch nuget | Select-Object -Last 1).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $NuGetExe)) {
-        throw "vcpkg did not provide a usable NuGet client: $NuGetExe"
-    }
-
-    & $NuGetExe sources remove -Name $NuGetSourceName -NonInteractive 2>$null
-    & $NuGetExe sources add `
-        -Source $env:US3_VCPKG_NUGET_SOURCE `
-        -StorePasswordInClearText `
-        -Name $NuGetSourceName `
-        -UserName $env:US3_VCPKG_NUGET_USER `
-        -Password $env:US3_VCPKG_NUGET_TOKEN `
-        -NonInteractive
-    if ($LASTEXITCODE -ne 0) { throw "Failed to configure the vcpkg NuGet source." }
-
-    & $NuGetExe setapikey $env:US3_VCPKG_NUGET_TOKEN `
-        -Source $env:US3_VCPKG_NUGET_SOURCE -NonInteractive
-    if ($LASTEXITCODE -ne 0) { throw "Failed to configure the vcpkg NuGet API key." }
-
-    $env:VCPKG_BINARY_SOURCES = "clear;nuget,$NuGetSourceName,readwrite"
-    Write-Host "Using vcpkg NuGet binary cache: $($env:US3_VCPKG_NUGET_SOURCE)"
+if ($env:VCPKG_BINARY_SOURCES) {
+    Write-Host "Using caller-provided vcpkg binary cache sources"
 } else {
     $env:VCPKG_BINARY_SOURCES = "clear;files,$VcpkgCacheDir,readwrite"
     Write-Host "Using local vcpkg binary cache: $VcpkgCacheDir"

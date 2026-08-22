@@ -374,13 +374,6 @@ for pkg in "${BREW_PKGS_ARCHIVE[@]}"; do
   ALL_BREW_PKGS+=("$pkg")
 done
 
-# vcpkg's supported NuGet binary-cache provider uses nuget.exe under Mono on
-# non-Windows platforms. Keep Mono out of ordinary developer setup unless the
-# remote cache was explicitly requested.
-if [ -n "${US3_VCPKG_NUGET_SOURCE:-}" ]; then
-  ALL_BREW_PKGS+=("mono")
-fi
-
 if [ "$INSTALL_HPC" = true ]; then
   ALL_BREW_PKGS+=("${BREW_PKGS_HPC[@]}")
   log "HPC mode: Open MPI will be included."
@@ -428,7 +421,6 @@ tool_for_formula() {
     python3)           echo "python3" ;;
     curl)              echo "curl" ;;
     open-mpi)          echo "mpicxx" ;;
-    mono)              echo "mono" ;;
     autoconf-archive)  echo "" ;;
     *)                 echo "$1" ;;
   esac

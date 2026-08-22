@@ -8,8 +8,8 @@ name: UltraScan3 Release
 # downloads all artifacts, renames them to stable filenames, and creates a
 # permanent versioned GitHub Release.
 #
-# vcpkg native binary caching is configured by the shared reusable build so
-# every entry point follows the same build path.
+# Actions-backed vcpkg binary caching is configured by the platform and shared
+# reusable workflows so every entry point follows the same build path.
 # ============================================================================
 
 run-name: "Release ${{ github.ref_name }} by @${{ github.actor }}"
@@ -21,7 +21,7 @@ on:
 
 permissions:
   contents: write
-  packages: write
+  actions: write
 
 jobs:
 

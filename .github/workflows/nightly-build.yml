@@ -9,7 +9,8 @@ name: UltraScan3 Nightly Build
 #   Skips all builds if no commits landed in the last 24h and the `nightly` tag
 #   already resolves to the current origin/main HEAD.
 #
-# PHASE 1-3 — Platform builds in three sequential groups, each fanning out to the corresponding
+# PHASE 1-3 — Platform builds in three sequential groups (to stay within the
+#   10 GB Actions cache quota), each fanning out to the corresponding
 #   ./.github/workflows/build-<platform>.yml reusable workflow via workflow_call:
 #   Group 1 (parallel): ubuntu + macos-arm
 #   Group 2 (parallel, after Group 1): oraclelinux8 + macos-intel
@@ -32,7 +33,7 @@ on:
 
 permissions:
   contents: write
-  packages: write
+  actions: write
 
 jobs:
 

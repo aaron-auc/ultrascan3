@@ -3,7 +3,7 @@ name: UltraScan3 On-Demand Build
 # ============================================================================
 # Manual dispatch (workflow_dispatch) entry point for on-demand platform builds.
 # Fans out to the corresponding build-<platform>.yml reusable workflows. Each
-# platform calls the same package build and uses vcpkg's native binary cache.
+# platform uses the repository's Actions-backed vcpkg binary cache.
 #
 # Inputs: ref (branch/tag/SHA), platforms (single, group, or all), clean tier,
 #         artifact retention. Artifact names include the UltraScan version,
@@ -57,7 +57,7 @@ on:
 
 permissions:
   contents: write
-  packages: write
+  actions: write
 
 jobs:
 

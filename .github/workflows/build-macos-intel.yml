@@ -46,12 +46,12 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  actions: write
 
 jobs:
   build-app:
     name: "macOS APP (x86_64, qt6)"
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@4527e9100e28ba09fa24b5d3ccebed6850fee20f
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@e65fc40ed1d9cba4c61a3e2b5d99e2a96a117905
     with:
       ref: ${{ inputs.ref || 'main' }}
       runner: macos-15-intel

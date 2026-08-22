@@ -81,7 +81,11 @@ if (-not (Test-Path $VcpkgExe)) {
 
 $env:VCPKG_ROOT = $VcpkgRoot
 $env:VCPKG_DOWNLOADS = $VcpkgDownloads
-$env:VCPKG_BINARY_SOURCES = "clear;files,$VcpkgCache,readwrite"
+if ($env:VCPKG_BINARY_SOURCES) {
+    Write-Host "Using caller-provided vcpkg binary cache sources"
+} else {
+    $env:VCPKG_BINARY_SOURCES = "clear;files,$VcpkgCache,readwrite"
+}
 $BuildJobs = if ($env:US3_BUILD_JOBS) {
     $ParsedJobs = 0
     if (-not [int]::TryParse($env:US3_BUILD_JOBS, [ref]$ParsedJobs) -or $ParsedJobs -lt 1) {
