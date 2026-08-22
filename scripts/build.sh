@@ -474,7 +474,46 @@ else
 fi
 
 mkdir -p "$US3_VCPKG_CACHE"
-export VCPKG_BINARY_SOURCES="clear;files,$US3_VCPKG_CACHE,readwrite"
+
+# CI can opt into vcpkg's native package-level NuGet cache.  Unlike a single
+# actions/cache archive, vcpkg publishes each completed package immediately,
+# so work survives a later timeout or failure.  Developers retain the local
+# files cache unless all three NuGet settings are provided by the caller.
+if [ -n "${US3_VCPKG_NUGET_SOURCE:-}" ] || [ -n "${US3_VCPKG_NUGET_USER:-}" ] || [ -n "${US3_VCPKG_NUGET_TOKEN:-}" ]; then
+  : "${US3_VCPKG_NUGET_SOURCE:?US3_VCPKG_NUGET_SOURCE is required for NuGet binary caching}"
+  : "${US3_VCPKG_NUGET_USER:?US3_VCPKG_NUGET_USER is required for NuGet binary caching}"
+  : "${US3_VCPKG_NUGET_TOKEN:?US3_VCPKG_NUGET_TOKEN is required for NuGet binary caching}"
+
+  if ! command -v mono >/dev/null 2>&1; then
+    echo "ERROR: mono is required for vcpkg NuGet caching on $PLATFORM." >&2
+    exit 1
+  fi
+
+  VCPKG_NUGET_NAME="UltraScanGitHub"
+  VCPKG_NUGET_EXE="$("$US3_VCPKG_ROOT/vcpkg" fetch nuget | tail -n 1)"
+  if [ ! -f "$VCPKG_NUGET_EXE" ]; then
+    echo "ERROR: vcpkg did not provide a usable NuGet client: $VCPKG_NUGET_EXE" >&2
+    exit 1
+  fi
+
+  mono "$VCPKG_NUGET_EXE" sources remove \
+    -Name "$VCPKG_NUGET_NAME" -NonInteractive >/dev/null 2>&1 || true
+  mono "$VCPKG_NUGET_EXE" sources add \
+    -Source "$US3_VCPKG_NUGET_SOURCE" \
+    -StorePasswordInClearText \
+    -Name "$VCPKG_NUGET_NAME" \
+    -UserName "$US3_VCPKG_NUGET_USER" \
+    -Password "$US3_VCPKG_NUGET_TOKEN" \
+    -NonInteractive
+  mono "$VCPKG_NUGET_EXE" setapikey "$US3_VCPKG_NUGET_TOKEN" \
+    -Source "$US3_VCPKG_NUGET_SOURCE" -NonInteractive
+
+  export VCPKG_BINARY_SOURCES="clear;nuget,$VCPKG_NUGET_NAME,readwrite"
+  echo "Using vcpkg NuGet binary cache: $US3_VCPKG_NUGET_SOURCE"
+else
+  export VCPKG_BINARY_SOURCES="clear;files,$US3_VCPKG_CACHE,readwrite"
+  echo "Using local vcpkg binary cache: $US3_VCPKG_CACHE"
+fi
 
 if [ -n "${US3_VCPKG_DOWNLOADS:-}" ]; then
   US3_VCPKG_DOWNLOADS="$US3_VCPKG_DOWNLOADS"

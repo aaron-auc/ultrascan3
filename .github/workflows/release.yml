@@ -8,9 +8,8 @@ name: UltraScan3 Release
 # downloads all artifacts, renames them to stable filenames, and creates a
 # permanent versioned GitHub Release.
 #
-# Cache probing, conditional warming, exact-hit enforcement, and cache-saving
-# policy are owned by the local platform workflows so every entry point follows
-# the same path.
+# vcpkg native binary caching is configured by the shared reusable build so
+# every entry point follows the same build path.
 # ============================================================================
 
 run-name: "Release ${{ github.ref_name }} by @${{ github.actor }}"
@@ -22,7 +21,7 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  packages: write
 
 jobs:
 
@@ -49,8 +48,8 @@ jobs:
 
           echo "Validated release $GITHUB_REF_NAME against VERSION $version."
 
-  # The platform workflows own cache probing/warming, runner selection,
-  # profiles, and the pinned external build implementation. Release-specific
+  # The platform workflows own runner selection, profiles, and the pinned
+  # external build implementation. Release-specific
   # policy is expressed only through their public inputs below.
 
   ubuntu:

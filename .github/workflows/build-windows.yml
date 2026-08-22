@@ -1,22 +1,9 @@
 name: Build — Windows
 
-# ============================================================================
-# Reusable platform build workflow: Windows x64 (windows-2022)
-# Profiles:  APP
-# Callers:   nightly-build.yml, on-demand-build.yml, and release.yml invoke
-#            this via workflow_call.
-# Standalone: workflow_dispatch on this file for one-off builds.
-# ============================================================================
-#
-# Change detection for scheduled nightly runs is handled by nightly-build.yml.
-# Calls from on-demand-build.yml and direct workflow_dispatch always proceed.
-# Windows validates its final binary cache, warms a missing/invalid cache in
-# disk-safe dependency stages, then requires that cache for packaging.
-
 run-name: >-
-    ${{ github.event_name == 'workflow_call'
-      && format('Windows [{0}]', inputs.ref)
-      || format('Manual Windows by @{0}', github.actor) }}
+  ${{ github.event_name == 'workflow_call'
+    && format('Windows [{0}]', inputs.ref)
+    || format('Manual Windows by @{0}', github.actor) }}
 
 on:
   workflow_dispatch:
@@ -37,8 +24,7 @@ on:
         required: false
         default: "3"
         type: choice
-        options: ["3","7","14","30"]
-
+        options: ["3", "7", "14", "30"]
   workflow_call:
     inputs:
       ref:
@@ -59,212 +45,19 @@ on:
         default: 3
 
 permissions:
-  contents: write
-  actions: write
-
-concurrency:
-  group: ultrascan3-cache-windows-2022-qt6
-  cancel-in-progress: false
+  contents: read
+  packages: write
 
 jobs:
-
-  purge-cache:
-    name: "Purge Windows cache"
-    if: inputs.clean_tier == 'clean-purge-cache'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - name: Delete Windows cache namespace
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/purge-actions-vcpkg-cache.sh vcpkg-windows-2022-qt6-APP-
-
-  # --------------------------------------------------------------------------
-  # PHASE 1 — CACHE PROBE
-  # Existence is insufficient: failed jobs historically created a 195-byte
-  # exact-key cache containing zero packages. Validate size and delete invalid
-  # immutable entries so the warmer can recreate the final key.
-  # --------------------------------------------------------------------------
-  probe-app:
-    name: "Probe: windows-2022 / qt6 / APP"
-    needs: purge-cache
-    if: always() && (needs.purge-cache.result == 'success' || needs.purge-cache.result == 'skipped')
-    runs-on: windows-2022
-    outputs:
-      cache-valid: ${{ steps.probe.outputs.cache-valid }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref || 'main' }}
-          fetch-depth: 1
-
-      - name: Validate exact Windows cache
-        id: probe
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CACHE_KEY: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $Json = gh cache list --repo "${{ github.repository }}" --key $env:CACHE_KEY --limit 10 --json id,key,sizeInBytes
-          $Entries = @($Json | ConvertFrom-Json)
-          $Exact = $Entries | Where-Object { $_.key -eq $env:CACHE_KEY } | Select-Object -First 1
-
-          if ($Exact -and [int64]$Exact.sizeInBytes -ge 1MB) {
-              Write-Host "Validated cache $($Exact.key): $([Math]::Round($Exact.sizeInBytes / 1MB, 1)) MB"
-              "cache-valid=true" >> $env:GITHUB_OUTPUT
-              exit 0
-          }
-
-          "cache-valid=false" >> $env:GITHUB_OUTPUT
-          if ($Exact) {
-              Write-Warning "Deleting invalid cache $($Exact.key): $($Exact.sizeInBytes) bytes"
-              gh cache delete $Exact.id --repo "${{ github.repository }}"
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          } else {
-              Write-Host "Exact Windows cache is absent."
-          }
-
-  # --------------------------------------------------------------------------
-  # PHASE 2 — CONDITIONAL STAGED WARM
-  # The vcpkg install uses --clean-after-build and D:-backed runner.temp state.
-  # A checkpoint after stage 3 keeps a cold two-core build below GitHub's
-  # six-hour per-job limit. The second job restores it and publishes the final
-  # immutable cache after stages 4 and 5 succeed.
-  # --------------------------------------------------------------------------
-  warm-through-stage3:
-    name: "Warm Windows cache (stages 1-3)"
-    needs: probe-app
-    if: needs.probe-app.outputs.cache-valid != 'true'
-    runs-on: windows-2022
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref || 'main' }}
-          fetch-depth: 1
-
-      # Seed a new dependency fingerprint with the most recent binary cache.
-      # vcpkg's package ABI hashes reject incompatible archives and reuse the
-      # unchanged ones, avoiding a complete Qt rebuild after a dependency edit.
-      - name: Seed Windows cache from compatible packages
-        uses: actions/cache/restore@v5
-        with:
-          path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
-          restore-keys: |
-            vcpkg-windows-2022-qt6-APP-
-
-      - name: Warm base dependencies
-        shell: pwsh
-        env:
-          CI: "true"
-          US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-        run: scripts\warm-cache-windows.ps1 -Stage 1
-
-      - name: Warm qtbase
-        shell: pwsh
-        env:
-          CI: "true"
-          US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-        run: scripts\warm-cache-windows.ps1 -Stage 2
-
-      - name: Warm qtmultimedia and qtdeclarative
-        shell: pwsh
-        env:
-          CI: "true"
-          US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-        run: scripts\warm-cache-windows.ps1 -Stage 3
-
-      - name: Save stage 3 Windows cache checkpoint
-        if: success()
-        uses: actions/cache/save@v5
-        with:
-          path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}-stage3
-
-  warm-through-stage5:
-    name: "Warm Windows cache (stages 4-5)"
-    needs: [probe-app, warm-through-stage3]
-    if: |
-      always() &&
-      !cancelled() &&
-      needs.probe-app.result == 'success' &&
-      needs.probe-app.outputs.cache-valid != 'true' &&
-      needs.warm-through-stage3.result == 'success'
-    runs-on: windows-2022
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref || 'main' }}
-          fetch-depth: 1
-
-      - name: Restore stage 3 Windows cache checkpoint
-        uses: actions/cache/restore@v5
-        with:
-          path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}-stage3
-          fail-on-cache-miss: true
-
-      - name: Warm remaining Qt and database libraries
-        shell: pwsh
-        env:
-          CI: "true"
-          US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-        run: scripts\warm-cache-windows.ps1 -Stage 4
-
-      - name: Warm Qwt dependencies
-        shell: pwsh
-        env:
-          CI: "true"
-          US3_VCPKG_CACHE: C:\Users\runneradmin\.vcpkg-cache
-        run: scripts\warm-cache-windows.ps1 -Stage 5
-
-      # The restored checkpoint is no longer needed once all packages exist in
-      # this runner's local cache. Delete it before saving the larger final key
-      # so both copies do not compete for the repository's cache quota.
-      - name: Delete stage 3 Windows cache checkpoint
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CACHE_KEY: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}-stage3
-        run: |
-          $ErrorActionPreference = "Stop"
-          gh cache delete $env:CACHE_KEY --repo "${{ github.repository }}"
-          if ($LASTEXITCODE -ne 0) {
-              Write-Warning "Stage 3 checkpoint was already absent or could not be deleted; continuing with the final cache save."
-          }
-
-      - name: Save completed Windows cache
-        if: success()
-        uses: actions/cache/save@v5
-        with:
-          path: C:\Users\runneradmin\.vcpkg-cache
-          key: vcpkg-windows-2022-qt6-APP-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/x64-windows.cmake') }}
-
-  # --------------------------------------------------------------------------
-  # PHASE 3 — BUILD
-  # Proceed only with a pre-existing validated cache or a successful warmer.
-  # The packaging build consumes but does not write the final cache.
-  # --------------------------------------------------------------------------
   build-app:
-    name: "Windows APP (windows-2022, qt6)"
-    needs: [probe-app, warm-through-stage3, warm-through-stage5]
-    if: |
-      always() &&
-      !cancelled() &&
-      needs.probe-app.result == 'success' &&
-      (needs.probe-app.outputs.cache-valid == 'true' || needs.warm-through-stage5.result == 'success')
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@addad8c9ca5d1a58dd1c2b20f070f37dfe3ca13a
+    name: "Windows APP (x86_64, qt6)"
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@4527e9100e28ba09fa24b5d3ccebed6850fee20f
     with:
-      ref:                     ${{ inputs.ref || 'main' }}
-      runner:                  windows-2022
-      qt_variant:              qt6
-      profile:                 APP
-      clean_tier:              ${{ inputs.clean_tier == 'clean-purge-cache' && 'clean' || inputs.clean_tier || 'incremental' }}
-      artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-windows-{0}', github.run_id) }}
+      ref: ${{ inputs.ref || 'main' }}
+      runner: windows-2022
+      qt_variant: qt6
+      profile: APP
+      clean_tier: ${{ inputs.clean_tier || 'incremental' }}
+      artifact_name_prefix: ${{ inputs.artifact_name_prefix || format('nightly-windows-{0}', github.run_id) }}
       artifact_platform_label: Windows-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
-      require_exact_cache_hit: true
-      save_cache:              false

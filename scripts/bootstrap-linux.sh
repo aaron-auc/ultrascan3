@@ -598,6 +598,12 @@ ALL_PKGS=(
   "${PKGS_INPUT[@]}"
 )
 
+# vcpkg's supported NuGet binary-cache provider uses nuget.exe. On Unix that
+# client runs under Mono; install it only when CI requested the remote cache.
+if [ -n "${US3_VCPKG_NUGET_SOURCE:-}" ]; then
+  ALL_PKGS+=(mono-complete)
+fi
+
 if [ "$INSTALL_HPC" = true ]; then
   ALL_PKGS+=("${PKGS_HPC[@]}")
   log "HPC mode: MPI packages will be included."
