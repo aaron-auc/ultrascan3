@@ -72,6 +72,10 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: ultrascan3-cache-ubuntu-24.04-qt6
+  cancel-in-progress: false
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -83,11 +87,27 @@ env:
 
 jobs:
 
+  purge-cache:
+    name: "Purge Ubuntu caches"
+    if: inputs.clean_tier == 'clean-purge-cache'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Delete Ubuntu cache namespaces
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          bash scripts/purge-actions-vcpkg-cache.sh
+          vcpkg-ubuntu-24.04-qt6-APP-
+          vcpkg-ubuntu-24.04-qt6-HPC-
+
   # --------------------------------------------------------------------------
   # PHASE 1 — CACHE PROBES  (ubuntu-only keys)
   # --------------------------------------------------------------------------
   probe-app:
     name: "Probe: ubuntu-24.04 / qt6 / APP"
+    needs: purge-cache
+    if: always() && (needs.purge-cache.result == 'success' || needs.purge-cache.result == 'skipped')
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -105,6 +125,8 @@ jobs:
 
   probe-hpc:
     name: "Probe: ubuntu-24.04 / qt6 / HPC"
+    needs: purge-cache
+    if: always() && (needs.purge-cache.result == 'success' || needs.purge-cache.result == 'skipped')
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -156,7 +178,7 @@ jobs:
       runner:                  ubuntu-24.04
       qt_variant:              qt6
       profile:                 APP
-      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      clean_tier:              ${{ inputs.clean_tier == 'clean-purge-cache' && 'clean' || inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-ubuntu-{0}', github.run_id) }}
       artifact_platform_label: Ubuntu-24.04-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
@@ -177,7 +199,7 @@ jobs:
       runner:                  ubuntu-24.04
       qt_variant:              qt6
       profile:                 HPC
-      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      clean_tier:              ${{ inputs.clean_tier == 'clean-purge-cache' && 'clean' || inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ format('{0}-HPC', inputs.artifact_name_prefix || format('nightly-ubuntu-{0}', github.run_id)) }}
       artifact_platform_label: Ubuntu-24.04-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}

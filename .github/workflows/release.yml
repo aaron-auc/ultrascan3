@@ -26,12 +26,36 @@ permissions:
 
 jobs:
 
+  validate-version:
+    name: "Validate release tag and VERSION"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Require tag to match VERSION
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < VERSION)
+          expected_tag="v${version}"
+
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "::error::Release tag '$GITHUB_REF_NAME' does not match VERSION '$version' (expected '$expected_tag')."
+            exit 1
+          fi
+
+          echo "Validated release $GITHUB_REF_NAME against VERSION $version."
+
   # The platform workflows own cache probing/warming, runner selection,
   # profiles, and the pinned external build implementation. Release-specific
   # policy is expressed only through their public inputs below.
 
   ubuntu:
     name: "Ubuntu 24.04 (APP + HPC)"
+    needs: validate-version
     uses: ./.github/workflows/build-ubuntu.yml
     with:
       ref:                     ${{ github.ref }}
@@ -42,6 +66,7 @@ jobs:
 
   macos-arm:
     name: "macOS ARM (APP)"
+    needs: validate-version
     uses: ./.github/workflows/build-macos-arm.yml
     with:
       ref:                     ${{ github.ref }}
@@ -52,6 +77,7 @@ jobs:
 
   oraclelinux8:
     name: "Oracle Linux 8 x64 (APP + HPC)"
+    needs: validate-version
     uses: ./.github/workflows/build-oraclelinux.yml
     with:
       ref:                     ${{ github.ref }}
@@ -62,6 +88,7 @@ jobs:
 
   macos-intel:
     name: "macOS Intel (APP)"
+    needs: validate-version
     uses: ./.github/workflows/build-macos-intel.yml
     with:
       ref:                     ${{ github.ref }}
@@ -72,6 +99,7 @@ jobs:
 
   windows:
     name: "Windows x64 (APP)"
+    needs: validate-version
     uses: ./.github/workflows/build-windows.yml
     with:
       ref:                     ${{ github.ref }}

@@ -63,13 +63,30 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: ultrascan3-cache-macos-15-intel-qt6
+  cancel-in-progress: false
+
 jobs:
+
+  purge-cache:
+    name: "Purge macOS Intel cache"
+    if: inputs.clean_tier == 'clean-purge-cache'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Delete macOS Intel cache namespace
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/purge-actions-vcpkg-cache.sh vcpkg-macos-15-intel-qt6-APP-
 
   # --------------------------------------------------------------------------
   # PHASE 1 — CACHE PROBE
   # --------------------------------------------------------------------------
   probe-app:
     name: "Probe: macos-15-intel / qt6 / APP"
+    needs: purge-cache
+    if: always() && (needs.purge-cache.result == 'success' || needs.purge-cache.result == 'skipped')
     runs-on: macos-15-intel
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -116,7 +133,7 @@ jobs:
       runner:                  macos-15-intel
       qt_variant:              qt6
       profile:                 APP
-      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      clean_tier:              ${{ inputs.clean_tier == 'clean-purge-cache' && 'clean' || inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-{0}', github.run_id) }}
       artifact_platform_label: macOS-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}

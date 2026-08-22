@@ -62,7 +62,22 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: ultrascan3-cache-windows-2022-qt6
+  cancel-in-progress: false
+
 jobs:
+
+  purge-cache:
+    name: "Purge Windows cache"
+    if: inputs.clean_tier == 'clean-purge-cache'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Delete Windows cache namespace
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/purge-actions-vcpkg-cache.sh vcpkg-windows-2022-qt6-APP-
 
   # --------------------------------------------------------------------------
   # PHASE 1 — CACHE PROBE
@@ -72,6 +87,8 @@ jobs:
   # --------------------------------------------------------------------------
   probe-app:
     name: "Probe: windows-2022 / qt6 / APP"
+    needs: purge-cache
+    if: always() && (needs.purge-cache.result == 'success' || needs.purge-cache.result == 'skipped')
     runs-on: windows-2022
     outputs:
       cache-valid: ${{ steps.probe.outputs.cache-valid }}
@@ -245,7 +262,7 @@ jobs:
       runner:                  windows-2022
       qt_variant:              qt6
       profile:                 APP
-      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      clean_tier:              ${{ inputs.clean_tier == 'clean-purge-cache' && 'clean' || inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-windows-{0}', github.run_id) }}
       artifact_platform_label: Windows-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}

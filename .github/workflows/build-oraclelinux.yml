@@ -64,13 +64,33 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: ultrascan3-cache-oraclelinux8-qt6
+  cancel-in-progress: false
+
 jobs:
+
+  purge-cache:
+    name: "Purge Oracle Linux 8 caches"
+    if: inputs.clean_tier == 'clean-purge-cache'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Delete Oracle Linux 8 cache namespaces
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          bash scripts/purge-actions-vcpkg-cache.sh
+          vcpkg-oraclelinux8-qt6-APP-
+          vcpkg-oraclelinux8-qt6-HPC-
 
   # --------------------------------------------------------------------------
   # PHASE 1 — CACHE PROBES  (oraclelinux8-specific keys, no container needed)
   # --------------------------------------------------------------------------
   probe-app:
     name: "Probe: oraclelinux8 / qt6 / APP"
+    needs: purge-cache
+    if: always() && (needs.purge-cache.result == 'success' || needs.purge-cache.result == 'skipped')
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -88,6 +108,8 @@ jobs:
 
   probe-hpc:
     name: "Probe: oraclelinux8 / qt6 / HPC"
+    needs: purge-cache
+    if: always() && (needs.purge-cache.result == 'success' || needs.purge-cache.result == 'skipped')
     runs-on: ubuntu-24.04
     outputs:
       cache-hit: ${{ steps.probe.outputs.cache-hit }}
@@ -137,7 +159,7 @@ jobs:
       cache_os_label:          oraclelinux8
       qt_variant:              qt6
       profile:                 APP
-      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      clean_tier:              ${{ inputs.clean_tier == 'clean-purge-cache' && 'clean' || inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ inputs.artifact_name_prefix || format('nightly-oraclelinux8-{0}', github.run_id) }}
       artifact_platform_label: RHEL-8-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
@@ -159,7 +181,7 @@ jobs:
       cache_os_label:          oraclelinux8
       qt_variant:              qt6
       profile:                 HPC
-      clean_tier:              ${{ inputs.clean_tier || 'incremental' }}
+      clean_tier:              ${{ inputs.clean_tier == 'clean-purge-cache' && 'clean' || inputs.clean_tier || 'incremental' }}
       artifact_name_prefix:    ${{ format('{0}-HPC', inputs.artifact_name_prefix || format('nightly-oraclelinux8-{0}', github.run_id)) }}
       artifact_platform_label: RHEL-8-x86_64
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days || '3') }}
