@@ -106,6 +106,8 @@
       "hidden": true,
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/admin/cmake/toolchain.cmake",
+        "CMAKE_JOB_POOLS": "us3_link=1",
+        "CMAKE_JOB_POOL_LINK": "us3_link",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
