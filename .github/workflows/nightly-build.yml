@@ -135,87 +135,38 @@ jobs:
           echo "has_changes=false" >> "$GITHUB_OUTPUT"
 
   # =========================================================================
-  # PLATFORM BUILDS — two parallel groups to reduce wall time while keeping
-  # peak cache usage under the 10 GB Actions quota.
+  # PLATFORM BUILDS
   #
-  # Each platform workflow owns its own probe → warm → build chain using
-  # isolated key namespaces (vcpkg-ubuntu-24.04-*, vcpkg-macos-15-*, etc.),
-  # so parallel runs do not contend on cache keys.
-  #
-  # Group 1 (parallel): ubuntu + macos-arm
-  #   Combined final keys ~3.9 GB; ubuntu intermediates are small.
-  #   Peak well within quota while both warm pipelines overlap.
-  #
-  # Group 2 (parallel, after group 1): oraclelinux8 + macos-intel
-  #   Group 1 intermediates are cleaned up before group 2 starts.
-  #   oraclelinux8 is small; intel final key ~1 GB.
-  #
-  # Group 3 (after group 2): windows
+  # All five targets run in parallel. The previous design ran them in three
+  # sequential groups to keep peak Actions-cache usage under the 10 GB quota;
+  # that constraint is gone because application builds no longer produce or
+  # consume a multi-gigabyte dependency cache. They pull a prebuilt toolchain
+  # pinned in buildsys/toolchain.lock.json and compile only UltraScan3.
   # =========================================================================
 
-  # --- Group 1 (parallel) ---------------------------------------------------
-
-  ubuntu:
-    name: "Ubuntu 24.04 (APP + HPC)"
+  build:
+    name: "${{ matrix.label }}"
     needs: check-changes
     if: needs.check-changes.outputs.has_changes == 'true'
-    uses: ./.github/workflows/build-ubuntu.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: ubuntu2404-x64,   profile: APP, label: "Ubuntu 24.04 APP",     platform: Ubuntu-24.04-x86_64 }
+          - { target: ubuntu2404-x64,   profile: HPC, label: "Ubuntu 24.04 HPC",     platform: HPC-Ubuntu-24.04-x86_64 }
+          - { target: oraclelinux8-x64, profile: APP, label: "Oracle Linux 8 APP",   platform: RHEL-8-x86_64 }
+          - { target: oraclelinux8-x64, profile: HPC, label: "Oracle Linux 8 HPC",   platform: HPC-RHEL-8-x86_64 }
+          - { target: macos-arm64,      profile: APP, label: "macOS arm64 APP",      platform: macOS-arm64 }
+          - { target: macos-x64,        profile: APP, label: "macOS x86_64 APP",     platform: macOS-x86_64 }
+          - { target: windows-x64,      profile: APP, label: "Windows x86_64 APP",   platform: Windows-x86_64 }
+    uses: ./.github/workflows/build-app.yml
     with:
+      target:                  ${{ matrix.target }}
+      profile:                 ${{ matrix.profile }}
+      qt_variant:              qt6
       ref:                     ${{ needs.check-changes.outputs.build_sha }}
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
-      artifact_retention_days: 3
-    secrets: inherit
-
-  macos-arm:
-    name: "macOS ARM (APP)"
-    needs: check-changes
-    if: needs.check-changes.outputs.has_changes == 'true'
-    uses: ./.github/workflows/build-macos-arm.yml
-    with:
-      ref:                     ${{ needs.check-changes.outputs.build_sha }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
-      artifact_retention_days: 3
-    secrets: inherit
-
-  # --- Group 2 (parallel, after group 1) ------------------------------------
-
-  oraclelinux8:
-    name: "Oracle Linux 8 x64 (APP + HPC)"
-    needs: [check-changes, ubuntu, macos-arm]
-    if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
-    uses: ./.github/workflows/build-oraclelinux.yml
-    with:
-      ref:                     ${{ needs.check-changes.outputs.build_sha }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
-      artifact_retention_days: 3
-    secrets: inherit
-
-  macos-intel:
-    name: "macOS Intel (APP)"
-    needs: [check-changes, ubuntu, macos-arm]
-    if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
-    uses: ./.github/workflows/build-macos-intel.yml
-    with:
-      ref:                     ${{ needs.check-changes.outputs.build_sha }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
-      artifact_retention_days: 3
-    secrets: inherit
-
-  # --- Group 3 (after group 2) -----------------------------------------------
-
-  windows:
-    name: "Windows x64 (APP)"
-    needs: [check-changes, oraclelinux8, macos-intel]
-    if: needs.check-changes.outputs.has_changes == 'true' && !cancelled()
-    uses: ./.github/workflows/build-windows.yml
-    with:
-      ref:                     ${{ needs.check-changes.outputs.build_sha }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('nightly-{0}', github.run_id) }}
+      artifact_name:           ${{ format('nightly-{0}-{1}', github.run_id, matrix.platform) }}
       artifact_retention_days: 3
     secrets: inherit
 
@@ -231,13 +182,7 @@ jobs:
 
   publish-release:
     name: "Publish Nightly Release"
-    needs:
-      - check-changes
-      - ubuntu
-      - oraclelinux8
-      - macos-arm
-      - macos-intel
-      - windows
+    needs: [check-changes, build]
     if: needs.check-changes.outputs.has_changes == 'true' && success()
     runs-on: ubuntu-24.04
     steps:

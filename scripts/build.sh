@@ -449,6 +449,40 @@ if [ ! -d "$US3_VCPKG_ROOT/.git" ]; then
   git clone https://github.com/microsoft/vcpkg.git "$US3_VCPKG_ROOT"
 fi
 
+# =============================================================================
+# Pin vcpkg to the commit recorded in buildsys/toolchain.lock.json.
+#
+# The commit pins the ports AND the tool: bootstrap-vcpkg resolves the tool
+# version from scripts/vcpkg-tool-metadata.txt at whatever is checked out.
+# Tracking the default branch instead lets an upstream vcpkg release change ABI
+# hashes underneath us, which silently invalidates every prebuilt package in the
+# toolchain -- turning a ten-minute build into a from-source rebuild of Qt with
+# no change in this repository.
+#
+# A local checkout is only moved when it is not already on the pinned commit,
+# so this is a no-op on repeat builds.
+# =============================================================================
+US3_VCPKG_PIN="$(python3 -c \
+  "import json,sys;print(json.load(open(sys.argv[1]))['vcpkg_commit'])" \
+  "${SOURCE_DIR}/buildsys/toolchain.lock.json" 2>/dev/null || echo "")"
+
+if [ -n "$US3_VCPKG_PIN" ]; then
+  CURRENT_VCPKG="$(git -C "$US3_VCPKG_ROOT" rev-parse HEAD 2>/dev/null || echo "")"
+  if [ "$CURRENT_VCPKG" != "$US3_VCPKG_PIN" ]; then
+    echo "Pinning vcpkg to ${US3_VCPKG_PIN} (was ${CURRENT_VCPKG:-unknown})"
+    if ! git -C "$US3_VCPKG_ROOT" cat-file -e "${US3_VCPKG_PIN}^{commit}" 2>/dev/null; then
+      git -C "$US3_VCPKG_ROOT" fetch --quiet origin "$US3_VCPKG_PIN" 2>/dev/null \
+        || git -C "$US3_VCPKG_ROOT" fetch --quiet origin
+    fi
+    git -C "$US3_VCPKG_ROOT" checkout --quiet --detach "$US3_VCPKG_PIN"
+    # The tool must match the checkout it was built from.
+    rm -f "$US3_VCPKG_ROOT/vcpkg"
+  fi
+else
+  echo "WARNING: could not read vcpkg_commit from buildsys/toolchain.lock.json;" >&2
+  echo "         using whatever is checked out at $US3_VCPKG_ROOT." >&2
+fi
+
 if [ ! -x "$US3_VCPKG_ROOT/vcpkg" ]; then
   echo ""
   echo "Bootstrapping vcpkg at $US3_VCPKG_ROOT..."

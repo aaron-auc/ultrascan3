@@ -55,23 +55,34 @@ elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
         set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "vcpkg triplet")
     endif()
 
-    # On Windows ARM64 building for x64-windows, vcpkg auto-detects the host as
-    # arm64-windows and installs Qt tools (moc, rcc, windeployqt) there instead
-    # of under x64-windows.  Explicitly setting VCPKG_HOST_TRIPLET=x64-windows
-    # causes vcpkg.cmake to pass --host-triplet=x64-windows to vcpkg install,
-    # which makes vcpkg treat the build as native x64 and place all tools under
-    # installed/x64-windows/tools/.  x64 binaries run under ARM64 emulation on
-    # Windows 11 ARM, so this is safe.
-    if(NOT DEFINED VCPKG_HOST_TRIPLET AND VCPKG_TARGET_TRIPLET STREQUAL "x64-windows")
-        set(VCPKG_HOST_TRIPLET "x64-windows" CACHE STRING "vcpkg host triplet")
-        message(STATUS "VCPKG_HOST_TRIPLET set to x64-windows (ensures Qt tools land in x64-windows/tools/)")
-    endif()
-
 else()
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_HOST_SYSTEM_NAME}")
 endif()
 
-message(STATUS "Platform: ${CMAKE_HOST_SYSTEM_NAME}, triplet: ${VCPKG_TARGET_TRIPLET}")
+# =============================================================================
+# Host triplet: always the target triplet.
+#
+# UltraScan3 is never cross-compiled -- every build is native. When the host
+# triplet differs from the target, vcpkg builds a SECOND copy of the entire
+# dependency graph to supply build-time tools (moc, rcc, uic and everything
+# they link against).
+#
+# Left to its defaults, vcpkg picks the static triplet as host, so
+# arm64-osx-dynamic (target) pairs with arm64-osx (host) and macOS built
+# 21 packages twice on top of the 26 it actually needed -- 68 build
+# configurations to produce 26 libraries. That is what pushed a cold macOS
+# build past three hours and filled the runner's disk.
+#
+# On Windows this additionally keeps Qt's tools under the target triplet's
+# tools/ directory: on a Windows ARM64 host, vcpkg would otherwise detect
+# arm64-windows as host and install moc/rcc/windeployqt there rather than
+# under x64-windows. x64 binaries run fine under ARM64 emulation.
+# =============================================================================
+if(NOT DEFINED VCPKG_HOST_TRIPLET)
+    set(VCPKG_HOST_TRIPLET "${VCPKG_TARGET_TRIPLET}" CACHE STRING "vcpkg host triplet")
+endif()
+
+message(STATUS "Platform: ${CMAKE_HOST_SYSTEM_NAME}, triplet: ${VCPKG_TARGET_TRIPLET}, host triplet: ${VCPKG_HOST_TRIPLET}")
 
 # =============================================================================
 # vcpkg installed dir: left at vcpkg's manifest-mode default,

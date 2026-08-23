@@ -48,62 +48,37 @@ jobs:
 
           echo "Validated release $GITHUB_REF_NAME against VERSION $version."
 
-  # The platform workflows own runner selection, profiles, and the pinned
-  # external build implementation. Release-specific
-  # policy is expressed only through their public inputs below.
+  # =========================================================================
+  # PLATFORM BUILDS
+  #
+  # All targets in parallel against the toolchain pinned in
+  # buildsys/toolchain.lock.json. A release therefore builds exactly the
+  # dependency binaries that were tested by the nightlies -- the pin is the
+  # thing that makes that guarantee, not a cache that may or may not have hit.
+  # =========================================================================
 
-  ubuntu:
-    name: "Ubuntu 24.04 (APP + HPC)"
+  build:
+    name: "${{ matrix.label }}"
     needs: validate-version
-    uses: ./.github/workflows/build-ubuntu.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: ubuntu2404-x64,   profile: APP, label: "Ubuntu 24.04 APP",   platform: Ubuntu-24.04-x86_64 }
+          - { target: ubuntu2404-x64,   profile: HPC, label: "Ubuntu 24.04 HPC",   platform: HPC-Ubuntu-24.04-x86_64 }
+          - { target: oraclelinux8-x64, profile: APP, label: "Oracle Linux 8 APP", platform: RHEL-8-x86_64 }
+          - { target: oraclelinux8-x64, profile: HPC, label: "Oracle Linux 8 HPC", platform: HPC-RHEL-8-x86_64 }
+          - { target: macos-arm64,      profile: APP, label: "macOS arm64 APP",    platform: macOS-arm64 }
+          - { target: macos-x64,        profile: APP, label: "macOS x86_64 APP",   platform: macOS-x86_64 }
+          - { target: windows-x64,      profile: APP, label: "Windows x86_64 APP", platform: Windows-x86_64 }
+    uses: ./.github/workflows/build-app.yml
     with:
+      target:                  ${{ matrix.target }}
+      profile:                 ${{ matrix.profile }}
+      qt_variant:              qt6
       ref:                     ${{ github.ref }}
       clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
-      artifact_retention_days: 7
-    secrets: inherit
-
-  macos-arm:
-    name: "macOS ARM (APP)"
-    needs: validate-version
-    uses: ./.github/workflows/build-macos-arm.yml
-    with:
-      ref:                     ${{ github.ref }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
-      artifact_retention_days: 7
-    secrets: inherit
-
-  oraclelinux8:
-    name: "Oracle Linux 8 x64 (APP + HPC)"
-    needs: validate-version
-    uses: ./.github/workflows/build-oraclelinux.yml
-    with:
-      ref:                     ${{ github.ref }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
-      artifact_retention_days: 7
-    secrets: inherit
-
-  macos-intel:
-    name: "macOS Intel (APP)"
-    needs: validate-version
-    uses: ./.github/workflows/build-macos-intel.yml
-    with:
-      ref:                     ${{ github.ref }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
-      artifact_retention_days: 7
-    secrets: inherit
-
-  windows:
-    name: "Windows x64 (APP)"
-    needs: validate-version
-    uses: ./.github/workflows/build-windows.yml
-    with:
-      ref:                     ${{ github.ref }}
-      clean_tier:              incremental
-      artifact_name_prefix:    ${{ format('release-{0}', github.ref_name) }}
+      artifact_name:           ${{ format('release-{0}-{1}', github.ref_name, matrix.platform) }}
       artifact_retention_days: 7
     secrets: inherit
 
@@ -115,7 +90,7 @@ jobs:
   # --------------------------------------------------------------------------
   publish-release:
     name: "Publish release ${{ github.ref_name }}"
-    needs: [ubuntu, macos-arm, oraclelinux8, macos-intel, windows]
+    needs: [validate-version, build]
     if: success()
     runs-on: ubuntu-24.04
     steps:
