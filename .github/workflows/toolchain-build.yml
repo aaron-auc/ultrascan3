@@ -1,0 +1,424 @@
+name: Toolchain
+
+# =============================================================================
+# Builds the prebuilt dependency toolchain for every platform UltraScan3 ships.
+#
+# THIS IS THE ONLY WORKFLOW THAT COMPILES Qt.
+#
+# It does not run on the commit path. It runs when the dependency definition
+# changes, or on demand. It is therefore allowed to be slow (hours) and to be
+# retried, because nothing waits on it: application builds keep using the
+# previously published toolchain until the pin is updated.
+#
+# OUTPUTS
+#   macOS / Windows -> vcpkg binary cache archives, published as assets on the
+#                      GitHub Release named by release_tag in
+#                      buildsys/toolchain.lock.json.
+#   Linux           -> container images published to GHCR.
+#
+# Both are then recorded in buildsys/toolchain.lock.json by the final job,
+# which opens a pull request. Merging that PR is what makes application builds
+# start using the new toolchain -- an explicit, reviewable step.
+#
+# RESUMABILITY
+#   Every archive job saves its partial binary cache as a workflow artifact
+#   even when the build fails, and restores it on the next attempt. A macOS
+#   toolchain build that dies on disk pressure or an upstream outage resumes
+#   from what it completed rather than starting over. This is the property the
+#   old commit-path design lacked, and the reason it could never converge.
+# =============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Which targets to build"
+        required: false
+        default: all
+        type: choice
+        options: [all, macos, windows, linux]
+      open_pr:
+        description: "Open a PR updating the toolchain pin"
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      # Exactly the inputs that determine dependency ABI. Application source is
+      # deliberately absent: changing UltraScan3 code must never rebuild Qt.
+      - "vcpkg.json"
+      - "vcpkg-configuration.json"
+      - "buildsys/vcpkg/overlay-ports/**"
+      - "admin/cmake/triplets/**"
+      - "buildsys/docker/**"
+      - "scripts/build-toolchain.sh"
+      - "scripts/build-toolchain.ps1"
+      - ".github/workflows/toolchain-build.yml"
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: us3-toolchain
+  cancel-in-progress: false
+
+jobs:
+
+  # ===========================================================================
+  # Resolve the pin once so every job agrees on version, tag and image names.
+  # ===========================================================================
+  plan:
+    name: "Plan"
+    runs-on: ubuntu-24.04
+    outputs:
+      version:        ${{ steps.lock.outputs.version }}
+      release_tag:    ${{ steps.lock.outputs.release_tag }}
+      vcpkg_commit:   ${{ steps.lock.outputs.vcpkg_commit }}
+      archive_matrix: ${{ steps.lock.outputs.archive_matrix }}
+      image_matrix:   ${{ steps.lock.outputs.image_matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 1 }
+
+      - name: Read toolchain pin
+        id: lock
+        shell: bash
+        env:
+          SELECTED: ${{ inputs.targets || 'all' }}
+        run: |
+          set -euo pipefail
+          # The matrices are computed here rather than declared on the jobs
+          # because a job-level `if:` cannot see the matrix context -- it is
+          # evaluated before the matrix expands. Selecting targets by filtering
+          # the matrix itself is the form that actually works.
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+
+          lock = json.load(open("buildsys/toolchain.lock.json"))
+          sel = os.environ["SELECTED"]
+
+          archives = [
+              {"target": "macos-arm64",  "os": "macos-15",       "group": "macos"},
+              {"target": "macos-x64",    "os": "macos-15-intel", "group": "macos"},
+              {"target": "windows-x64",  "os": "windows-2022",   "group": "windows"},
+          ]
+          images = [
+              {"target": "oraclelinux8-x64",
+               "dockerfile": "buildsys/docker/oraclelinux8.Dockerfile",
+               "image": "us3-toolchain-oraclelinux8", "group": "linux"},
+              {"target": "ubuntu2404-x64",
+               "dockerfile": "buildsys/docker/ubuntu2404.Dockerfile",
+               "image": "us3-toolchain-ubuntu2404", "group": "linux"},
+          ]
+
+          keep = lambda rows: [r for r in rows if sel in ("all", r["group"])]
+
+          print(f"version={lock['toolchain_version']}")
+          print(f"release_tag={lock['release_tag']}")
+          print(f"vcpkg_commit={lock['vcpkg_commit']}")
+          print("archive_matrix=" + json.dumps({"include": keep(archives)}))
+          print("image_matrix="   + json.dumps({"include": keep(images)}))
+          PY
+
+          echo "--- plan ---"
+          cat "$GITHUB_OUTPUT"
+
+  # ===========================================================================
+  # macOS and Windows: build a vcpkg binary cache, archive it.
+  # ===========================================================================
+  archive:
+    name: "Toolchain ${{ matrix.target }}"
+    needs: plan
+    if: fromJson(needs.plan.outputs.archive_matrix).include[0] != null
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.archive_matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 1 }
+
+      - name: Resolve paths
+        id: paths
+        shell: bash
+        run: |
+          # Windows keeps the cache on a short path: Qt's source trees are deep
+          # enough to hit the 260-character limit from a workspace-relative one.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            echo "cache=D:/us3tc" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache=${RUNNER_TEMP}/us3-toolchain-cache" >> "$GITHUB_OUTPUT"
+          fi
+          echo "asset=us3-toolchain-${{ matrix.target }}-qt6-v${{ needs.plan.outputs.version }}.tar.zst" >> "$GITHUB_OUTPUT"
+
+      # Resume from whatever a previous attempt completed. This is what makes a
+      # multi-hour cold build converge across retries instead of restarting.
+      - name: Restore partial toolchain from previous attempt
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.paths.outputs.cache }}
+          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/**') }}
+          restore-keys: |
+            us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-
+            us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-
+
+      - name: Free disk space (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # Qt's build tree is large and these preinstalled stacks are not used
+          # by any UltraScan3 build.
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
+          sudo rm -rf /usr/local/lib/android /usr/local/share/dotnet || true
+          df -h /
+
+      - name: Build toolchain (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CI: "true"
+        run: |
+          chmod +x scripts/build-toolchain.sh scripts/bootstrap-macos.sh
+          scripts/build-toolchain.sh \
+            --cache-dir "${{ steps.paths.outputs.cache }}" \
+            --qt6 --profiles "APP"
+
+      - name: Build toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CI: "true"
+        run: |
+          ./scripts/build-toolchain.ps1 `
+            -CacheDir "${{ steps.paths.outputs.cache }}" `
+            -QtVariant qt6 -Profiles APP
+
+      # Saved on failure too: a partial cache is strictly more useful than none,
+      # and every vcpkg cache entry is individually complete and valid.
+      - name: Save partial toolchain for retry
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.paths.outputs.cache }}
+          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Archive toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --use-compress-program='zstd -19 -T0' \
+              -cf "${{ steps.paths.outputs.asset }}" \
+              -C "${{ steps.paths.outputs.cache }}" .
+          ls -lh "${{ steps.paths.outputs.asset }}"
+
+      - name: Record checksum
+        id: sum
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v sha256sum >/dev/null; then
+            SUM=$(sha256sum "${{ steps.paths.outputs.asset }}" | awk '{print $1}')
+          else
+            SUM=$(shasum -a 256 "${{ steps.paths.outputs.asset }}" | awk '{print $1}')
+          fi
+          echo "sha256=${SUM}" >> "$GITHUB_OUTPUT"
+          printf '%s  %s\n' "$SUM" "${{ steps.paths.outputs.asset }}" > "${{ matrix.target }}.sha256"
+
+      - name: Upload toolchain archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-${{ matrix.target }}
+          path: |
+            ${{ steps.paths.outputs.asset }}
+            ${{ matrix.target }}.sha256
+          retention-days: 5
+          compression-level: 0
+
+  # ===========================================================================
+  # Linux: build and push container images with the toolchain baked in.
+  # ===========================================================================
+  image:
+    name: "Toolchain ${{ matrix.target }}"
+    needs: plan
+    if: fromJson(needs.plan.outputs.image_matrix).include[0] != null
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.image_matrix) }}
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 1 }
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+                      /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6-v${{ needs.plan.outputs.version }}
+          build-args: |
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+          # Layer cache lives in the registry, so an image rebuild after an
+          # unrelated Dockerfile edit does not recompile Qt.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:buildcache,mode=max
+          provenance: false
+
+      # Digests travel as artifacts rather than job outputs: a matrix job's
+      # outputs collapse to whichever leg finished last, which would silently
+      # pin one image with the other's digest.
+      - name: Collect digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Pushed digest: ${{ steps.build.outputs.digest }}"
+          mkdir -p digests
+          printf '%s' "${{ steps.build.outputs.digest }}" > "digests/${{ matrix.target }}.digest"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.target }}
+          path: digests/${{ matrix.target }}.digest
+          retention-days: 5
+
+  # ===========================================================================
+  # Publish the archives and open a PR updating the pin.
+  #
+  # The pin update is a pull request rather than a direct push on purpose:
+  # switching every platform onto a new toolchain is exactly the kind of change
+  # that should be visible and revertible.
+  # ===========================================================================
+  publish:
+    name: "Publish and pin"
+    needs: [plan, archive, image]
+    if: always() && needs.plan.result == 'success' && !cancelled()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: incoming
+          pattern: "{toolchain-*,digest-*}"
+
+      - name: Show what arrived
+        run: find incoming -type f | sort
+
+      - name: Publish toolchain release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ARCHIVES=(incoming/toolchain-*/*.tar.zst)
+          if [ ${#ARCHIVES[@]} -eq 0 ]; then
+            echo "No archives to publish (Linux-only run)."
+            exit 0
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "UltraScan3 dependency toolchain ${TAG}" \
+              --notes "Prebuilt Qt6 and C dependencies consumed by application builds. Pinned in buildsys/toolchain.lock.json." \
+              --prerelease
+          fi
+
+          # --clobber: re-running the workflow for the same version replaces the
+          # asset rather than failing on a name collision.
+          gh release upload "$TAG" "${ARCHIVES[@]}" --clobber
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)  \(.size)"'
+
+      - name: Update toolchain pin
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, json, os, pathlib
+
+          lock_path = pathlib.Path("buildsys/toolchain.lock.json")
+          lock = json.loads(lock_path.read_text())
+          changed = []
+
+          # Archive targets: read the checksum recorded beside each archive.
+          for sums in glob.glob("incoming/toolchain-*/*.sha256"):
+              digest, asset = pathlib.Path(sums).read_text().split()
+              target = pathlib.Path(sums).stem
+              entry = lock["targets"].get(target)
+              if entry is None:
+                  continue
+              if entry.get("sha256") != digest or entry.get("asset") != asset:
+                  entry["sha256"] = digest
+                  entry["asset"] = asset
+                  changed.append(target)
+
+          # Container targets: read the pushed manifest digest.
+          for dpath in glob.glob("incoming/digest-*/*.digest"):
+              target = pathlib.Path(dpath).stem
+              digest = pathlib.Path(dpath).read_text().strip()
+              entry = lock["targets"].get(target)
+              if entry is None or not digest:
+                  continue
+              if entry.get("digest") != digest:
+                  entry["digest"] = digest
+                  changed.append(target)
+
+          lock_path.write_text(json.dumps(lock, indent=2) + "\n")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"changed={' '.join(sorted(changed))}\n")
+              fh.write(f"any={'true' if changed else 'false'}\n")
+
+          print("updated targets:", changed or "(none)")
+          PY
+
+          git --no-pager diff -- buildsys/toolchain.lock.json || true
+
+      - name: Open pin update pull request
+        if: steps.pin.outputs.any == 'true' && (inputs.open_pr == null || inputs.open_pr)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="toolchain/pin-v${{ needs.plan.outputs.version }}-${GITHUB_RUN_ID}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add buildsys/toolchain.lock.json
+          git commit -m "Update dependency toolchain pin for ${{ needs.plan.outputs.release_tag }}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "Update dependency toolchain pin (${{ needs.plan.outputs.release_tag }})" \
+            --body "Built by the Toolchain workflow (run ${GITHUB_RUN_ID}).
+
+          Updated targets: ${{ steps.pin.outputs.changed }}
+
+          Merging this switches application builds onto the newly published
+          toolchain. Until it merges, builds keep using the previous one." \
+            --base main --head "$BRANCH"

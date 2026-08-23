@@ -1,0 +1,57 @@
+{
+  "$comment": [
+    "Single source of truth for the prebuilt dependency toolchain.",
+    "",
+    "Application builds NEVER compile Qt or any other dependency. They consume",
+    "the artifacts pinned here, which are produced by",
+    ".github/workflows/toolchain-build.yml and published to a GitHub Release",
+    "(archives) or GHCR (container images).",
+    "",
+    "To upgrade dependencies: change vcpkg.json / the vcpkg pin, run the",
+    "toolchain workflow, and merge the pin update it produces. That is the only",
+    "moment Qt gets compiled.",
+    "",
+    "toolchain_version is the cache epoch. Bump it to deliberately discard every",
+    "cached artifact -- for example after changing triplet selection in",
+    "admin/cmake/toolchain.cmake, which affects dependency ABI but is not part",
+    "of the cache fingerprint.",
+    "",
+    "Container 'image' is the bare package name, NOT a full registry path.",
+    "The owner is supplied at runtime from github.repository_owner so this",
+    "file is identical in ehb54/ultrascan3 and in any fork: each publishes to",
+    "its own GHCR namespace and pins the digest its own toolchain run produced."
+  ],
+  "toolchain_version": 1,
+  "vcpkg_commit": "a44707152fabbedcf1c17fe80d7bfb7d9370d8d5",
+  "vcpkg_commit_comment": "Matches builtin-baseline in vcpkg.json. Pinning the checkout also pins the vcpkg tool, since bootstrap-vcpkg resolves the tool version from scripts/vcpkg-tool-metadata.txt at this commit.",
+  "release_tag": "toolchain-v1",
+  "targets": {
+    "macos-arm64": {
+      "kind": "archive",
+      "asset": "us3-toolchain-macos-arm64-qt6-v1.tar.zst",
+      "sha256": ""
+    },
+    "macos-x64": {
+      "kind": "archive",
+      "asset": "us3-toolchain-macos-x64-qt6-v1.tar.zst",
+      "sha256": ""
+    },
+    "windows-x64": {
+      "kind": "archive",
+      "asset": "us3-toolchain-windows-x64-qt6-v1.tar.zst",
+      "sha256": ""
+    },
+    "ubuntu2404-x64": {
+      "kind": "container",
+      "image": "us3-toolchain-ubuntu2404",
+      "tag": "qt6-v1",
+      "digest": ""
+    },
+    "oraclelinux8-x64": {
+      "kind": "container",
+      "image": "us3-toolchain-oraclelinux8",
+      "tag": "qt6-v1",
+      "digest": ""
+    }
+  }
+}

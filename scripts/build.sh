@@ -24,7 +24,7 @@ CLEAN=false            # --clean:   wipe build dir + vcpkg installed/ for triple
 PURGE_CACHE=false      # --purge-cache: additive to --clean, also wipes binary cache (tier 3)
 BUILD_PKG=false        # --pkg: build platform-native package
 PROFILE="APP"          # default profile
-QT_VARIANT="qt6"       # qt6 | qt5-qwt616 | qt5-qwt630
+QT_VARIANT="qt6"       # qt6 | qt5-qwt630
 ARCH=""
 US3_VCPKG_ROOT="${US3_VCPKG_ROOT:-}"
 
@@ -35,7 +35,6 @@ while [[ $# -gt 0 ]]; do
     --clean)        CLEAN=true;                 shift ;;
     --purge-cache)  PURGE_CACHE=true;            shift ;;
     --qt6)          QT_VARIANT="qt6";           shift ;;
-    --qt5-qwt616)   QT_VARIANT="qt5-qwt616";   shift ;;
     --qt5-qwt630)   QT_VARIANT="qt5-qwt630";   shift ;;
     --arch)
       ARCH="$2"; shift 2
@@ -75,7 +74,6 @@ while [[ $# -gt 0 ]]; do
       echo "                         Linux   -> portable tar.xz archive (xz-compressed)"
       echo "                                    Output: build/<preset>/UltraScan3-<version>-Linux-<arch>.tar.xz"
       echo "  --qt6                Build with Qt6 + Qwt6.3.0 [default on macOS]"
-      echo "  --qt5-qwt616         Build with Qt5 + Qwt6.1.6 [Linux only]"
       echo "  --qt5-qwt630         Build with Qt5 + Qwt6.3.0 [Linux only]"
       echo "  --arch x64           Target x64 architecture [default: auto-detect]"
       echo "  --arch arm64         Target ARM64 architecture"
@@ -96,7 +94,6 @@ while [[ $# -gt 0 ]]; do
       echo "EXAMPLES:"
       echo "  $0                        # Build only"
       echo "  $0 TEST                   # Build with TEST profile"
-      echo "  $0 --qt5-qwt616           # Build Qt5+Qwt6.1.6 (Linux only)"
       echo "  $0 --rebuild              # Wipe build dir, rebuild UltraScan only"
       echo "  $0 --clean                # Full dep reinstall (after vcpkg.json changes)"
       echo "  $0 --clean --purge-cache  # Nuke everything, recompile deps from source"
@@ -146,7 +143,6 @@ fi
 QT_VERSION_LABEL=""
 case "$QT_VARIANT" in
   qt6)         QT_VERSION_LABEL="Qt6 (Qwt 6.3.0)" ;;
-  qt5-qwt616)  QT_VERSION_LABEL="Qt5 (Qwt 6.1.6)" ;;
   qt5-qwt630)  QT_VERSION_LABEL="Qt5 (Qwt 6.3.0)" ;;
 esac
 
@@ -447,6 +443,40 @@ fi
 if [ ! -d "$US3_VCPKG_ROOT/.git" ]; then
   echo "vcpkg not found at $US3_VCPKG_ROOT, cloning..."
   git clone https://github.com/microsoft/vcpkg.git "$US3_VCPKG_ROOT"
+fi
+
+# =============================================================================
+# Pin vcpkg to the commit recorded in buildsys/toolchain.lock.json.
+#
+# The commit pins the ports AND the tool: bootstrap-vcpkg resolves the tool
+# version from scripts/vcpkg-tool-metadata.txt at whatever is checked out.
+# Tracking the default branch instead lets an upstream vcpkg release change ABI
+# hashes underneath us, which silently invalidates every prebuilt package in the
+# toolchain -- turning a ten-minute build into a from-source rebuild of Qt with
+# no change in this repository.
+#
+# A local checkout is only moved when it is not already on the pinned commit,
+# so this is a no-op on repeat builds.
+# =============================================================================
+US3_VCPKG_PIN="$(python3 -c \
+  "import json,sys;print(json.load(open(sys.argv[1]))['vcpkg_commit'])" \
+  "${SOURCE_DIR}/buildsys/toolchain.lock.json" 2>/dev/null || echo "")"
+
+if [ -n "$US3_VCPKG_PIN" ]; then
+  CURRENT_VCPKG="$(git -C "$US3_VCPKG_ROOT" rev-parse HEAD 2>/dev/null || echo "")"
+  if [ "$CURRENT_VCPKG" != "$US3_VCPKG_PIN" ]; then
+    echo "Pinning vcpkg to ${US3_VCPKG_PIN} (was ${CURRENT_VCPKG:-unknown})"
+    if ! git -C "$US3_VCPKG_ROOT" cat-file -e "${US3_VCPKG_PIN}^{commit}" 2>/dev/null; then
+      git -C "$US3_VCPKG_ROOT" fetch --quiet origin "$US3_VCPKG_PIN" 2>/dev/null \
+        || git -C "$US3_VCPKG_ROOT" fetch --quiet origin
+    fi
+    git -C "$US3_VCPKG_ROOT" checkout --quiet --detach "$US3_VCPKG_PIN"
+    # The tool must match the checkout it was built from.
+    rm -f "$US3_VCPKG_ROOT/vcpkg"
+  fi
+else
+  echo "WARNING: could not read vcpkg_commit from buildsys/toolchain.lock.json;" >&2
+  echo "         using whatever is checked out at $US3_VCPKG_ROOT." >&2
 fi
 
 if [ ! -x "$US3_VCPKG_ROOT/vcpkg" ]; then

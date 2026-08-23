@@ -368,7 +368,7 @@ elif [ "$DISTRO_FAMILY" = "rhel" ]; then
   #   Rocky 8's default GCC 8.5 is incompatible with Qt 6.10's C++17 noexcept
   #   correctness checks (static_assert failures in qcomparehelpers.h).
   #   GCC 13 matches the compiler used on Ubuntu 24.04 and builds Qt 6.10 cleanly.
-  #   Activation: warm-cache.sh and build.sh source the toolset environment
+  #   Activation: build-toolchain.sh and build.sh source the toolset environment
   #   before invoking vcpkg.
   # ninja-build: from EPEL — the generator used by every CMake preset
   # cmake: RHEL 8 BaseOS ships cmake 3.26+ which satisfies our >= 3.21 requirement
@@ -758,7 +758,7 @@ fi
 # It is NOT on PATH by default — it must be activated via scl or by sourcing
 # the enable script.  We write a profile.d snippet so that CC/CXX are set
 # for all subsequent shells and subprocesses, and also activate it for the
-# current shell session so warm-cache.sh and build.sh pick it up immediately.
+# current shell session so build-toolchain.sh and build.sh pick it up immediately.
 if [ "$DISTRO_FAMILY" = "rhel" ] && [ -f /opt/rh/gcc-toolset-13/enable ]; then
   GCC13_PROFILE="/etc/profile.d/gcc-toolset-13.sh"
   if [ ! -f "$GCC13_PROFILE" ]; then

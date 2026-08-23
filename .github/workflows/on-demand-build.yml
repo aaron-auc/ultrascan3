@@ -86,76 +86,61 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
 
-  ubuntu:
-    name: "Ubuntu 24.04 (APP + HPC)"
-    needs: metadata
-    if: |
-      inputs.platforms == 'all'    ||
-      inputs.platforms == 'ubuntu' ||
-      inputs.platforms == 'linux'
-    uses: ./.github/workflows/build-ubuntu.yml
-    with:
-      ref:                     ${{ inputs.ref }}
-      clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
-      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
-    secrets: inherit
+  # =========================================================================
+  # PLATFORM BUILDS
+  #
+  # The selection is computed here rather than expressed as a job-level `if`:
+  # a job's `if` is evaluated before its matrix expands, so it cannot see the
+  # matrix context. Filtering the matrix itself is the form that works.
+  # =========================================================================
 
-  macos-arm:
-    name: "macOS ARM (APP)"
+  select:
+    name: "Select platforms"
     needs: metadata
-    if: |
-      inputs.platforms == 'all'       ||
-      inputs.platforms == 'macos-arm' ||
-      inputs.platforms == 'macos'
-    uses: ./.github/workflows/build-macos-arm.yml
-    with:
-      ref:                     ${{ inputs.ref }}
-      clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
-      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
-    secrets: inherit
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.s.outputs.matrix }}
+    steps:
+      - id: s
+        shell: bash
+        env:
+          SELECTED: ${{ inputs.platforms }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
 
-  macos-intel:
-    name: "macOS Intel (APP)"
-    needs: metadata
-    if: |
-      inputs.platforms == 'all'         ||
-      inputs.platforms == 'macos-intel' ||
-      inputs.platforms == 'macos'
-    uses: ./.github/workflows/build-macos-intel.yml
-    with:
-      ref:                     ${{ inputs.ref }}
-      clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
-      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
-    secrets: inherit
+          sel = os.environ["SELECTED"]
+          rows = [
+            {"target": "ubuntu2404-x64",   "profile": "APP", "label": "Ubuntu 24.04 APP",   "platform": "Ubuntu-24.04-x86_64",     "groups": ["ubuntu", "linux"]},
+            {"target": "ubuntu2404-x64",   "profile": "HPC", "label": "Ubuntu 24.04 HPC",   "platform": "HPC-Ubuntu-24.04-x86_64", "groups": ["ubuntu", "linux"]},
+            {"target": "oraclelinux8-x64", "profile": "APP", "label": "Oracle Linux 8 APP", "platform": "RHEL-8-x86_64",           "groups": ["oraclelinux8", "linux"]},
+            {"target": "oraclelinux8-x64", "profile": "HPC", "label": "Oracle Linux 8 HPC", "platform": "HPC-RHEL-8-x86_64",       "groups": ["oraclelinux8", "linux"]},
+            {"target": "macos-arm64",      "profile": "APP", "label": "macOS arm64 APP",    "platform": "macOS-arm64",             "groups": ["macos-arm", "macos"]},
+            {"target": "macos-x64",        "profile": "APP", "label": "macOS x86_64 APP",   "platform": "macOS-x86_64",            "groups": ["macos-intel", "macos"]},
+            {"target": "windows-x64",      "profile": "APP", "label": "Windows x86_64 APP", "platform": "Windows-x86_64",          "groups": ["windows"]},
+          ]
+          keep = [r for r in rows if sel == "all" or sel in r["groups"]]
+          for r in keep:
+              r.pop("groups")
+          print("matrix=" + json.dumps({"include": keep}))
+          PY
+          cat "$GITHUB_OUTPUT"
 
-  windows:
-    name: "Windows x64 (APP)"
-    needs: metadata
-    if: |
-      inputs.platforms == 'all'     ||
-      inputs.platforms == 'windows'
-    uses: ./.github/workflows/build-windows.yml
+  build:
+    name: "${{ matrix.label }}"
+    needs: [metadata, select]
+    if: fromJson(needs.select.outputs.matrix).include[0] != null
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.select.outputs.matrix) }}
+    uses: ./.github/workflows/build-app.yml
     with:
+      target:                  ${{ matrix.target }}
+      profile:                 ${{ matrix.profile }}
+      qt_variant:              qt6
       ref:                     ${{ inputs.ref }}
       clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
-      artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
-    secrets: inherit
-
-  oraclelinux8:
-    name: "Oracle Linux 8 x64 (APP + HPC)"
-    needs: metadata
-    if: |
-      inputs.platforms == 'all'         ||
-      inputs.platforms == 'oraclelinux8' ||
-      inputs.platforms == 'linux'
-    uses: ./.github/workflows/build-oraclelinux.yml
-    with:
-      ref:                     ${{ inputs.ref }}
-      clean_tier:              ${{ inputs.clean_tier }}
-      artifact_name_prefix:    ${{ format('UltraScan3-{0}-build-{1}-{2}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha) }}
+      artifact_name:           ${{ format('UltraScan3-{0}-build-{1}-{2}-{3}', needs.metadata.outputs.version, github.run_number, needs.metadata.outputs.short_sha, matrix.platform) }}
       artifact_retention_days: ${{ fromJson(inputs.artifact_retention_days) }}
     secrets: inherit

@@ -26,9 +26,6 @@
 .PARAMETER qt6
     Build with Qt6 + Qwt6.3.0 [default]
 
-.PARAMETER qt5-qwt616
-    Build with Qt5 + Qwt6.1.6
-
 .PARAMETER qt5-qwt630
     Build with Qt5 + Qwt6.3.0
 
@@ -56,10 +53,6 @@
     Qt6, ARM64, APP profile
 
 .EXAMPLE
-    .\build.bat --qt5-qwt616 --arch arm64 TEST
-    Qt5 + Qwt6.1.6, ARM64, TEST profile
-
-.EXAMPLE
     .\build.bat --rebuild
     Wipe build dir only, rebuild UltraScan (vcpkg untouched)
 
@@ -84,7 +77,6 @@
         scripts\build.bat
         scripts\build.bat --arch arm64
         scripts\build.bat --rebuild
-        scripts\build.bat --clean --qt5-qwt616 --arch arm64 TEST
         scripts\build.bat --vcpkg-root C:\dev\vcpkg
         scripts\build.bat --pkg
 
@@ -111,7 +103,6 @@ param(
     [switch]${purge-cache},
     [switch]${pkg},
     [switch]${qt6},
-    [switch]${qt5-qwt616},
     [switch]${qt5-qwt630},
     [string]${arch}       = "",
     [string]${vcpkg-root} = "",
@@ -143,7 +134,6 @@ if (${help}) {
     Write-Host "                             Use when switching compilers or suspecting cache corruption."
     Write-Host "  --pkg                    Build the Windows NSIS installer"
     Write-Host "  --qt6                    Build with Qt6 + Qwt6.3.0 [default]"
-    Write-Host "  --qt5-qwt616             Build with Qt5 + Qwt6.1.6"
     Write-Host "  --qt5-qwt630             Build with Qt5 + Qwt6.3.0"
     Write-Host "  --arch x64               Target x64 architecture [default: auto-detect]"
     Write-Host "  --arch arm64             Target ARM64 architecture"
@@ -165,7 +155,6 @@ if (${help}) {
     Write-Host "EXAMPLES:"
     Write-Host "  build.bat                                  # Qt6, auto-detect arch, APP"
     Write-Host "  build.bat --arch arm64                     # Qt6, ARM64, APP"
-    Write-Host "  build.bat --qt5-qwt616                     # Qt5 + Qwt6.1.6, APP"
     Write-Host "  build.bat --qt6 TEST                       # Qt6, TEST profile"
     Write-Host "  build.bat --rebuild                        # Wipe build dir, rebuild UltraScan only"
     Write-Host "  build.bat --clean                          # Full dep reinstall (after vcpkg.json changes)"
@@ -190,7 +179,6 @@ if (${help}) {
 # RESOLVE QT VERSION
 # =============================================================================
 $QtSuffix = "-qt6"
-if (${qt5-qwt616}.IsPresent) { $QtSuffix = "-qt5-qwt616" }
 elseif (${qt5-qwt630}.IsPresent) { $QtSuffix = "-qt5-qwt630" }
 
 $profile = $profile.ToUpperInvariant()
@@ -448,7 +436,6 @@ if ($env:GITHUB_ACTIONS -eq "true") {
 Write-Host "Selected build profile : ${profile}"
 $QtLabel = switch ($QtSuffix) {
     "-qt6"        { "Qt6 (Qwt 6.3.0)" }
-    "-qt5-qwt616" { "Qt5 (Qwt 6.1.6)" }
     "-qt5-qwt630" { "Qt5 (Qwt 6.3.0)" }
     default       { $QtSuffix }
 }
@@ -744,54 +731,7 @@ function Test-VcpkgRepoClean {
     }
 }
 
-function Get-VcpkgDefaultBranch {
-    param([string]$VcpkgRoot)
 
-    Push-Location $VcpkgRoot
-    try {
-        # Ask the clone's own origin rather than hardcoding a branch name, so this
-        # survives an upstream rename and works for forks pointed at by VCPKG_ROOT.
-        $head = git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $head) {
-            git remote set-head origin --auto 1>$null 2>$null
-            $head = git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>$null
-        }
-
-        if ($head) { return ($head -replace '^origin/', '') }
-        return "master"
-    }
-    finally {
-        Pop-Location
-    }
-}
-
-function Restore-VcpkgDefaultBranch {
-    param([string]$VcpkgRoot)
-
-    if (-not (Test-VcpkgGitRepo $VcpkgRoot)) { return }
-
-    Push-Location $VcpkgRoot
-    try {
-        git symbolic-ref --quiet HEAD 1>$null 2>$null
-        if ($LASTEXITCODE -eq 0) { return }   # already on a branch
-
-        # A detached HEAD here is usually left over from an older build script that
-        # checked out the manifest baseline. vcpkg.exe must match the checked-out
-        # scripts, so put the repo back on its default branch before bootstrapping.
-        $branch = Get-VcpkgDefaultBranch -VcpkgRoot $VcpkgRoot
-        Write-Warning "$VcpkgRoot is in a detached HEAD state. Restoring branch '$branch'."
-
-        git checkout $branch
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "ERROR: Could not check out '$branch' in $VcpkgRoot." -ForegroundColor Red
-            Write-Host "  Fix the vcpkg clone manually, or delete it and re-run the build."
-            exit 1
-        }
-    }
-    finally {
-        Pop-Location
-    }
-}
 
 function Repair-VcpkgRepo {
     param([string]$VcpkgRoot)
@@ -803,8 +743,10 @@ function Repair-VcpkgRepo {
 
     Write-Host "Repairing vcpkg repo at $VcpkgRoot ..." -ForegroundColor Yellow
 
-    # reset --hard HEAD below keeps a detached HEAD detached, so get back on a branch first.
-    Restore-VcpkgDefaultBranch -VcpkgRoot $VcpkgRoot
+    # Deliberately does NOT move off a detached HEAD: the clone is pinned to the
+    # commit in buildsys/toolchain.lock.json, and restoring the default branch
+    # here would silently unpin it. reset --hard HEAD below is correct on a
+    # detached HEAD -- it discards local damage while staying on the pin.
 
     Push-Location $VcpkgRoot
     try {
@@ -870,8 +812,41 @@ if (-not (Test-Path $VcpkgRoot)) {
     }
 }
 
-# Must run before bootstrap: vcpkg.exe is built from whatever is checked out.
-Restore-VcpkgDefaultBranch -VcpkgRoot $VcpkgRoot
+# =============================================================================
+# Pin vcpkg to the commit recorded in buildsys/toolchain.lock.json.
+#
+# Must run before bootstrap: vcpkg.exe is built from whatever is checked out,
+# and the commit pins the tool as well as the ports -- bootstrap-vcpkg resolves
+# the tool version from scripts/vcpkg-tool-metadata.txt at this commit.
+#
+# This replaces Restore-VcpkgDefaultBranch, which forced the clone back onto the
+# default branch and so actively defeated pinning. Tracking the default branch
+# lets an upstream vcpkg release change ABI hashes underneath us, invalidating
+# every prebuilt package in the toolchain and turning a ten-minute build into a
+# from-source rebuild of Qt with no change in this repository.
+# =============================================================================
+$LockPath = Join-Path $SourceRoot 'buildsys\toolchain.lock.json'
+if (Test-Path $LockPath) {
+    $VcpkgPin = (Get-Content -Raw $LockPath | ConvertFrom-Json).vcpkg_commit
+    $CurrentVcpkg = (git -C $VcpkgRoot rev-parse HEAD 2>$null)
+    if ($CurrentVcpkg -ne $VcpkgPin) {
+        Write-Host "Pinning vcpkg to $VcpkgPin (was $CurrentVcpkg)"
+        git -C $VcpkgRoot cat-file -e "$VcpkgPin^{commit}" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            git -C $VcpkgRoot fetch --quiet origin $VcpkgPin 2>$null
+            if ($LASTEXITCODE -ne 0) { git -C $VcpkgRoot fetch --quiet origin }
+        }
+        git -C $VcpkgRoot checkout --quiet --detach $VcpkgPin
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: could not check out pinned vcpkg commit $VcpkgPin" -ForegroundColor Red
+            exit 1
+        }
+        # The tool must match the checkout it was built from.
+        Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $VcpkgRoot 'vcpkg.exe')
+    }
+} else {
+    Write-Warning "buildsys\toolchain.lock.json not found; using whatever vcpkg is checked out."
+}
 
 if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
     Write-Host "Bootstrapping vcpkg at $VcpkgRoot..."
