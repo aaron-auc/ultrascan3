@@ -493,6 +493,7 @@ fi
 
 mkdir -p "$US3_VCPKG_DOWNLOADS"
 export US3_VCPKG_DOWNLOADS
+export VCPKG_DOWNLOADS="$US3_VCPKG_DOWNLOADS"
 
 # Reduce peak disk usage during vcpkg dependency builds.
 export VCPKG_INSTALL_OPTIONS="--clean-after-build"
