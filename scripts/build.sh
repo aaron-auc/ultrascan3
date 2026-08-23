@@ -833,7 +833,8 @@ _fix_qt6_x11r6_paths
 echo "Configuring..."
 cmake --preset "$CONFIGURE_PRESET" \
   -DUS3_PROFILE="${PROFILE}" \
-  -DVCPKG_ROOT="$US3_VCPKG_ROOT"
+  -DVCPKG_ROOT="$US3_VCPKG_ROOT" \
+  -DVCPKG_INSTALL_OPTIONS="$VCPKG_INSTALL_OPTIONS"
 
 # Read back what the toolchain resolved rather than recomputing its rule.
 VCPKG_INSTALLED_DIR="$(sed -n 's|^VCPKG_INSTALLED_DIR:PATH=||p' \
