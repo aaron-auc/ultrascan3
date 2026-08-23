@@ -68,7 +68,16 @@ if (-not (Test-Path $Stamp)) {
     New-Item -ItemType Directory -Force -Path $Dest | Out-Null
     $TmpArchive = Join-Path $Dest ".$($pin.asset).partial"
 
-    $repo = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'aaron-auc/ultrascan3' }
+    # Repository is derived, never hardcoded: this file is identical upstream and
+    # in every fork, and each publishes its toolchain to its own releases.
+    $repo = $env:GITHUB_REPOSITORY
+    if (-not $repo) {
+        $origin = (git -C $SourceDir remote get-url origin 2>$null)
+        if ($origin) { $repo = $origin -replace '^git@[^:]+:', '' -replace '^https?://[^/]+/', '' -replace '\.git$', '' }
+    }
+    if (-not $repo) {
+        throw "cannot determine the GitHub repository to download from. Set GITHUB_REPOSITORY=<owner>/<repo> and retry."
+    }
     $url  = "https://github.com/$repo/releases/download/$($lock.release_tag)/$($pin.asset)"
 
     Write-Host "Fetching toolchain for $Target"

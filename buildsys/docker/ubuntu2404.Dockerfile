@@ -62,6 +62,10 @@ RUN test -d "${US3_VCPKG_CACHE}" \
  && test "$(find "${US3_VCPKG_CACHE}" -name '*.zip' | wc -l)" -gt 0 \
  && echo "toolchain cache OK: $(find "${US3_VCPKG_CACHE}" -name '*.zip' | wc -l) packages"
 
+# Supplied by the toolchain workflow. GHCR uses this label to link the
+# package to its repository, so it must name whichever fork published it.
+ARG IMAGE_SOURCE=https://github.com/ehb54/ultrascan3
+
 LABEL org.opencontainers.image.title="UltraScan3 build toolchain (Ubuntu 24.04)" \
       org.opencontainers.image.description="Prebuilt Qt6 and C dependencies for UltraScan3 Ubuntu builds" \
-      org.opencontainers.image.source="https://github.com/aaron-auc/ultrascan3"
+      org.opencontainers.image.source="${IMAGE_SOURCE}"

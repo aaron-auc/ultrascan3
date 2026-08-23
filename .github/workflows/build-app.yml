@@ -107,6 +107,10 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ inputs.target }}
+          # Supplied here rather than stored in the lock file, so the same pin
+          # works in ehb54/ultrascan3 and in any fork: each publishes to its own
+          # GHCR namespace.
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
@@ -135,7 +139,8 @@ jobs:
                       "Run the Toolchain workflow and merge the pin update."
                   )
               # Pinned by digest, not tag: a tag can be moved, a digest cannot.
-              print(f"container={pin['image']}@{digest}")
+              owner = os.environ["OWNER"].lower()
+              print(f"container=ghcr.io/{owner}/{pin['image']}@{digest}")
               print("needs_container=true")
           else:
               print("container=")

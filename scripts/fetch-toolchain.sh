@@ -154,7 +154,20 @@ else
   if [ ! -f "$STAMP" ]; then
     mkdir -p "$DEST"
     TMP_ARCHIVE="${DEST}/.${ASSET}.partial"
-    URL="https://github.com/${GITHUB_REPOSITORY:-aaron-auc/ultrascan3}/releases/download/${RELEASE_TAG}/${ASSET}"
+    # Repository is derived, never hardcoded: this file is identical upstream
+    # and in every fork, and each publishes its toolchain to its own releases.
+    REPO="${GITHUB_REPOSITORY:-}"
+    if [ -z "$REPO" ]; then
+      ORIGIN="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || echo "")"
+      REPO="$(printf '%s' "$ORIGIN" \
+        | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')"
+    fi
+    if [ -z "$REPO" ]; then
+      echo "ERROR: cannot determine the GitHub repository to download from." >&2
+      echo "       Set GITHUB_REPOSITORY=<owner>/<repo> and retry." >&2
+      exit 1
+    fi
+    URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}/${ASSET}"
 
     echo "Fetching toolchain for ${TARGET}" >&2
     echo "  ${URL}" >&2
