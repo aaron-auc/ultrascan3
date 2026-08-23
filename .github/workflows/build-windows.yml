@@ -192,7 +192,7 @@ jobs:
   build-app:
     name: "Windows APP (x86_64, qt6)"
     needs: warm-partition-b
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@e65fc40ed1d9cba4c61a3e2b5d99e2a96a117905
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@46b2059634e499b48535ddf6143eddf6fc7c7b08
     with:
       ref: ${{ inputs.ref || 'main' }}
       runner: windows-2022

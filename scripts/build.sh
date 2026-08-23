@@ -106,6 +106,7 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "ENVIRONMENT VARIABLES:"
       echo "  US3_BUILD_JOBS      Override number of parallel build jobs"
+      echo "  US3_VCPKG_JOBS      Override dependency-only parallel build jobs"
       echo "  US3_VCPKG_ROOT      Override vcpkg location (default: \$HOME/vcpkg)"
       echo "  US3_VCPKG_CACHE     Override binary cache path (default: \$HOME/.vcpkg-cache)"
       echo "  US3_VCPKG_DOWNLOADS Override downloads cache path"
@@ -239,7 +240,8 @@ fi
 echo "Detected $CORES cores; using $BUILD_JOBS parallel build jobs."
 echo ""
 
-export VCPKG_MAX_CONCURRENCY="$BUILD_JOBS"
+VCPKG_BUILD_JOBS="${US3_VCPKG_JOBS:-$BUILD_JOBS}"
+export VCPKG_MAX_CONCURRENCY="$VCPKG_BUILD_JOBS"
 
 # =============================================================================
 # SCRIPT_DIR / SOURCE_DIR
@@ -754,6 +756,7 @@ echo "  vcpkg root          : ${VCPKG_ROOT}"
 echo "  vcpkg cache         : ${US3_VCPKG_CACHE}"
 echo "  vcpkg downloads     : ${US3_VCPKG_DOWNLOADS}"
 echo "  vcpkg install opts  : ${VCPKG_INSTALL_OPTIONS:-<none>}"
+echo "  vcpkg build jobs    : ${VCPKG_BUILD_JOBS}"
 echo "  Build jobs          : ${BUILD_JOBS}"
 echo ""
 

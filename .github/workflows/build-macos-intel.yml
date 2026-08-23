@@ -51,12 +51,13 @@ permissions:
 jobs:
   build-app:
     name: "macOS APP (x86_64, qt6)"
-    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@e65fc40ed1d9cba4c61a3e2b5d99e2a96a117905
+    uses: ehb54/uslims_version_workflows/.github/workflows/ultrascan-reusable-build.yml@46b2059634e499b48535ddf6143eddf6fc7c7b08
     with:
       ref: ${{ inputs.ref || 'main' }}
       runner: macos-15-intel
       qt_variant: qt6
       profile: APP
+      vcpkg_build_jobs: 1
       clean_tier: ${{ inputs.clean_tier || 'incremental' }}
       artifact_name_prefix: ${{ inputs.artifact_name_prefix || format('nightly-macos-intel-{0}', github.run_id) }}
       artifact_platform_label: macOS-x86_64
