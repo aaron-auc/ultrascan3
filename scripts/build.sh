@@ -24,7 +24,7 @@ CLEAN=false            # --clean:   wipe build dir + vcpkg installed/ for triple
 PURGE_CACHE=false      # --purge-cache: additive to --clean, also wipes binary cache (tier 3)
 BUILD_PKG=false        # --pkg: build platform-native package
 PROFILE="APP"          # default profile
-QT_VARIANT="qt6"       # qt6 | qt5-qwt616 | qt5-qwt630
+QT_VARIANT="qt6"       # qt6 | qt5-qwt630
 ARCH=""
 US3_VCPKG_ROOT="${US3_VCPKG_ROOT:-}"
 
@@ -35,7 +35,6 @@ while [[ $# -gt 0 ]]; do
     --clean)        CLEAN=true;                 shift ;;
     --purge-cache)  PURGE_CACHE=true;            shift ;;
     --qt6)          QT_VARIANT="qt6";           shift ;;
-    --qt5-qwt616)   QT_VARIANT="qt5-qwt616";   shift ;;
     --qt5-qwt630)   QT_VARIANT="qt5-qwt630";   shift ;;
     --arch)
       ARCH="$2"; shift 2
@@ -75,7 +74,6 @@ while [[ $# -gt 0 ]]; do
       echo "                         Linux   -> portable tar.xz archive (xz-compressed)"
       echo "                                    Output: build/<preset>/UltraScan3-<version>-Linux-<arch>.tar.xz"
       echo "  --qt6                Build with Qt6 + Qwt6.3.0 [default on macOS]"
-      echo "  --qt5-qwt616         Build with Qt5 + Qwt6.1.6 [Linux only]"
       echo "  --qt5-qwt630         Build with Qt5 + Qwt6.3.0 [Linux only]"
       echo "  --arch x64           Target x64 architecture [default: auto-detect]"
       echo "  --arch arm64         Target ARM64 architecture"
@@ -96,7 +94,6 @@ while [[ $# -gt 0 ]]; do
       echo "EXAMPLES:"
       echo "  $0                        # Build only"
       echo "  $0 TEST                   # Build with TEST profile"
-      echo "  $0 --qt5-qwt616           # Build Qt5+Qwt6.1.6 (Linux only)"
       echo "  $0 --rebuild              # Wipe build dir, rebuild UltraScan only"
       echo "  $0 --clean                # Full dep reinstall (after vcpkg.json changes)"
       echo "  $0 --clean --purge-cache  # Nuke everything, recompile deps from source"
@@ -146,7 +143,6 @@ fi
 QT_VERSION_LABEL=""
 case "$QT_VARIANT" in
   qt6)         QT_VERSION_LABEL="Qt6 (Qwt 6.3.0)" ;;
-  qt5-qwt616)  QT_VERSION_LABEL="Qt5 (Qwt 6.1.6)" ;;
   qt5-qwt630)  QT_VERSION_LABEL="Qt5 (Qwt 6.3.0)" ;;
 esac
 

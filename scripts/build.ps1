@@ -26,9 +26,6 @@
 .PARAMETER qt6
     Build with Qt6 + Qwt6.3.0 [default]
 
-.PARAMETER qt5-qwt616
-    Build with Qt5 + Qwt6.1.6
-
 .PARAMETER qt5-qwt630
     Build with Qt5 + Qwt6.3.0
 
@@ -56,10 +53,6 @@
     Qt6, ARM64, APP profile
 
 .EXAMPLE
-    .\build.bat --qt5-qwt616 --arch arm64 TEST
-    Qt5 + Qwt6.1.6, ARM64, TEST profile
-
-.EXAMPLE
     .\build.bat --rebuild
     Wipe build dir only, rebuild UltraScan (vcpkg untouched)
 
@@ -84,7 +77,6 @@
         scripts\build.bat
         scripts\build.bat --arch arm64
         scripts\build.bat --rebuild
-        scripts\build.bat --clean --qt5-qwt616 --arch arm64 TEST
         scripts\build.bat --vcpkg-root C:\dev\vcpkg
         scripts\build.bat --pkg
 
@@ -111,7 +103,6 @@ param(
     [switch]${purge-cache},
     [switch]${pkg},
     [switch]${qt6},
-    [switch]${qt5-qwt616},
     [switch]${qt5-qwt630},
     [string]${arch}       = "",
     [string]${vcpkg-root} = "",
@@ -143,7 +134,6 @@ if (${help}) {
     Write-Host "                             Use when switching compilers or suspecting cache corruption."
     Write-Host "  --pkg                    Build the Windows NSIS installer"
     Write-Host "  --qt6                    Build with Qt6 + Qwt6.3.0 [default]"
-    Write-Host "  --qt5-qwt616             Build with Qt5 + Qwt6.1.6"
     Write-Host "  --qt5-qwt630             Build with Qt5 + Qwt6.3.0"
     Write-Host "  --arch x64               Target x64 architecture [default: auto-detect]"
     Write-Host "  --arch arm64             Target ARM64 architecture"
@@ -165,7 +155,6 @@ if (${help}) {
     Write-Host "EXAMPLES:"
     Write-Host "  build.bat                                  # Qt6, auto-detect arch, APP"
     Write-Host "  build.bat --arch arm64                     # Qt6, ARM64, APP"
-    Write-Host "  build.bat --qt5-qwt616                     # Qt5 + Qwt6.1.6, APP"
     Write-Host "  build.bat --qt6 TEST                       # Qt6, TEST profile"
     Write-Host "  build.bat --rebuild                        # Wipe build dir, rebuild UltraScan only"
     Write-Host "  build.bat --clean                          # Full dep reinstall (after vcpkg.json changes)"
@@ -190,7 +179,6 @@ if (${help}) {
 # RESOLVE QT VERSION
 # =============================================================================
 $QtSuffix = "-qt6"
-if (${qt5-qwt616}.IsPresent) { $QtSuffix = "-qt5-qwt616" }
 elseif (${qt5-qwt630}.IsPresent) { $QtSuffix = "-qt5-qwt630" }
 
 $profile = $profile.ToUpperInvariant()
@@ -448,7 +436,6 @@ if ($env:GITHUB_ACTIONS -eq "true") {
 Write-Host "Selected build profile : ${profile}"
 $QtLabel = switch ($QtSuffix) {
     "-qt6"        { "Qt6 (Qwt 6.3.0)" }
-    "-qt5-qwt616" { "Qt5 (Qwt 6.1.6)" }
     "-qt5-qwt630" { "Qt5 (Qwt 6.3.0)" }
     default       { $QtSuffix }
 }
