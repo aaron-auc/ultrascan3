@@ -196,7 +196,10 @@ else
 
     rm -rf "$CACHE_DIR"
     mkdir -p "$CACHE_DIR"
-    tar --use-compress-program=unzstd -xf "$TMP_ARCHIVE" -C "$CACHE_DIR"
+    # `zstd -d` rather than `unzstd`: the latter is only a symlink, which
+    # minimal zstd installs omit. Passing arguments through
+    # --use-compress-program is how the archive is created, too.
+    tar --use-compress-program='zstd -d' -xf "$TMP_ARCHIVE" -C "$CACHE_DIR"
     rm -f "$TMP_ARCHIVE"
     touch "$STAMP"
     echo "Toolchain extracted to ${CACHE_DIR}" >&2

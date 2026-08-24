@@ -108,10 +108,34 @@ if (-not (Test-Path $Stamp)) {
     if (Test-Path $CacheDir) { Remove-Item -Recurse -Force $CacheDir }
     New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
 
-    # tar.exe ships with Windows Server 2019+ and handles zstd via the external
-    # zstd binary, which bootstrap-windows.ps1 installs.
-    & tar.exe --use-compress-program=unzstd -xf $TmpArchive -C $CacheDir
-    if ($LASTEXITCODE -ne 0) { throw "extraction failed for $($pin.asset)" }
+    # Extraction is deliberately two steps rather than one tar invocation.
+    #
+    # The archive is CREATED under Git Bash, where MSYS tar and zstd are both on
+    # PATH. It is resolved HERE under pwsh, where `tar` is the bsdtar bundled
+    # with Windows. bsdtar implements zstd by spawning an external helper named
+    # `unzstd`, and the runner image ships zstd as `zstd.exe` with no `unzstd`
+    # alias -- so asking bsdtar to decompress fails with "unable to run program".
+    #
+    # Decompressing first and untarring second removes that name dependency. It
+    # is done via a temporary file rather than a pipeline because a PowerShell
+    # pipe between two native commands decodes the stream as text and would
+    # corrupt the archive.
+    $zstd = Get-Command zstd -ErrorAction SilentlyContinue
+    if (-not $zstd) {
+        throw "zstd was not found on PATH; it is required to unpack $($pin.asset)."
+    }
+
+    $TmpTar = "$TmpArchive.tar"
+    & $zstd.Source -d -f -q $TmpArchive -o $TmpTar
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -Force -ErrorAction SilentlyContinue $TmpTar
+        throw "zstd failed to decompress $($pin.asset)"
+    }
+
+    & tar.exe -xf $TmpTar -C $CacheDir
+    $TarExit = $LASTEXITCODE
+    Remove-Item -Force -ErrorAction SilentlyContinue $TmpTar
+    if ($TarExit -ne 0) { throw "extraction failed for $($pin.asset)" }
 
     Remove-Item -Force $TmpArchive
     New-Item -ItemType File -Path $Stamp -Force | Out-Null
