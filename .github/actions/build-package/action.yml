@@ -94,11 +94,17 @@ runs:
     # -------------------------------------------------------------------------
     - name: Stage package
       shell: bash
+      env:
+        PROFILE: ${{ inputs.profile }}
       run: |
         set -euo pipefail
         rm -rf artifact-upload && mkdir -p artifact-upload
 
-        mapfile -t FOUND < <(
+        # Deliberately no `mapfile`/`readarray`: those are bash 4 builtins and
+        # macOS ships bash 3.2, so they resolve to "command not found" (exit
+        # 127) on the macOS runners while passing in the Linux containers.
+        # Newline-separated strings work identically under both.
+        FOUND=$(
           find build -maxdepth 2 -type f \
             \( -name 'UltraScan3-*.tar.xz' \
             -o -name 'UltraScan3-*.pkg' \
@@ -106,20 +112,22 @@ runs:
             -o -name 'UltraScan3-*.tar.gz' \) | sort
         )
 
-        if [ "${{ inputs.profile }}" = "HPC" ]; then
-          mapfile -t FOUND < <(printf '%s\n' "${FOUND[@]}" | grep -- '-HPC-' || true)
+        if [ "$PROFILE" = "HPC" ]; then
+          FOUND=$(printf '%s\n' "$FOUND" | grep -- '-HPC-' || true)
         else
-          mapfile -t FOUND < <(printf '%s\n' "${FOUND[@]}" | grep -v -- '-HPC-' || true)
+          FOUND=$(printf '%s\n' "$FOUND" | grep -v -- '-HPC-' || true)
         fi
 
-        if [ "${#FOUND[@]}" -eq 0 ] || [ -z "${FOUND[0]}" ]; then
-          echo "::error::no package produced for profile ${{ inputs.profile }}"
+        PKG=$(printf '%s\n' "$FOUND" | head -n 1)
+
+        if [ -z "$PKG" ]; then
+          echo "::error::no package produced for profile ${PROFILE}"
           find build -maxdepth 2 -type f -name 'UltraScan3-*' || echo "(nothing matching UltraScan3-*)"
           exit 1
         fi
 
-        cp "${FOUND[0]}" artifact-upload/
-        echo "staged: ${FOUND[0]}"
+        cp "$PKG" artifact-upload/
+        echo "staged: $PKG"
         ls -lh artifact-upload/
 
     - name: Upload package
