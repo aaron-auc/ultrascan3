@@ -44,6 +44,7 @@ WORKDIR /src
 COPY vcpkg.json vcpkg-configuration.json ./
 COPY buildsys/toolchain.lock.json        ./buildsys/
 COPY buildsys/vcpkg/overlay-ports        ./buildsys/vcpkg/overlay-ports
+COPY qwtplot3d                           ./qwtplot3d
 COPY admin/cmake/triplets                ./admin/cmake/triplets
 COPY scripts/bootstrap-linux.sh          ./scripts/
 COPY scripts/build-toolchain.sh          ./scripts/

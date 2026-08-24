@@ -50,6 +50,7 @@ on:
       - "vcpkg.json"
       - "vcpkg-configuration.json"
       - "buildsys/vcpkg/overlay-ports/**"
+      - "qwtplot3d/**"
       - "admin/cmake/triplets/**"
       - "buildsys/docker/**"
       - "scripts/build-toolchain.sh"
@@ -162,7 +163,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ steps.paths.outputs.cache }}
-          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/**') }}
+          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'qwtplot3d/**', 'admin/cmake/triplets/**') }}
           restore-keys: |
             us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-
             us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-
@@ -205,7 +206,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.paths.outputs.cache }}
-          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'admin/cmake/triplets/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'qwtplot3d/**', 'admin/cmake/triplets/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Archive toolchain
         shell: bash
