@@ -33,29 +33,29 @@
     "macos-arm64": {
       "kind": "archive",
       "asset": "us3-toolchain-macos-arm64-qt6-v1.tar.zst",
-      "sha256": ""
+      "sha256": "19ed8fa0c1538a757a078be09a17b5c217e574b99c49c8eb13e25e626a6c7f92"
     },
     "macos-x64": {
       "kind": "archive",
       "asset": "us3-toolchain-macos-x64-qt6-v1.tar.zst",
-      "sha256": ""
+      "sha256": "8fad8ff4ffe07dd012cfbaa3a39b17e30a7e4d80f3c44fd9d5c071af99cd6f8e"
     },
     "windows-x64": {
       "kind": "archive",
       "asset": "us3-toolchain-windows-x64-qt6-v1.tar.zst",
-      "sha256": ""
+      "sha256": "6ceb76892e8417951f5446122f64f3e1aff43931d2bd0ea83dc8be47e4cb89b7"
     },
     "ubuntu2404-x64": {
       "kind": "container",
       "image": "us3-toolchain-ubuntu2404",
       "tag": "qt6-v1",
-      "digest": ""
+      "digest": "sha256:e049458ce239554f4e58eb5f674ecbfa932ff457ee35278fd745b8b81db05c8e"
     },
     "oraclelinux8-x64": {
       "kind": "container",
       "image": "us3-toolchain-oraclelinux8",
       "tag": "qt6-v1",
-      "digest": ""
+      "digest": "sha256:58a3de4d098051672d02ada5f3631e6f0f4d304b03aa3f0d18da0bd1c95d1f09"
     }
   }
 }
