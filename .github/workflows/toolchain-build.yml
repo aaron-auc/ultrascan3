@@ -310,13 +310,18 @@ jobs:
   #
   # The pin update is a pull request rather than a direct push on purpose:
   # switching every platform onto a new toolchain is exactly the kind of change
-  # that should be visible and revertible.
+  # that should be visible and revertible. It is merged by `land` below, once
+  # `validate` has built the real application against the new toolchain.
   # ===========================================================================
   publish:
     name: "Publish and pin"
     needs: [plan, archive, image]
     if: always() && needs.plan.result == 'success' && !cancelled()
     runs-on: ubuntu-24.04
+    outputs:
+      pin_any:    ${{ steps.pin.outputs.any }}
+      pin_branch: ${{ steps.pr.outputs.branch }}
+      pin_pr:     ${{ steps.pr.outputs.number }}
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
@@ -402,6 +407,7 @@ jobs:
           git --no-pager diff -- buildsys/toolchain.lock.json || true
 
       - name: Open pin update pull request
+        id: pr
         if: steps.pin.outputs.any == 'true' && (inputs.open_pr == null || inputs.open_pr)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -421,6 +427,127 @@ jobs:
 
           Updated targets: ${{ steps.pin.outputs.changed }}
 
-          Merging this switches application builds onto the newly published
-          toolchain. Until it merges, builds keep using the previous one." \
+          The \`validate\` job of that run builds every supported platform
+          against this pin. It merges automatically if they all pass, and is
+          left open with a comment if any of them does not." \
             --base main --head "$BRANCH"
+
+          # The PR number is read back rather than parsed out of `gh pr create`
+          # output, so a future change to that output format cannot silently
+          # break the merge.
+          {
+            echo "branch=$BRANCH"
+            echo "number=$(gh pr view "$BRANCH" --json number --jq .number)"
+          } >> "$GITHUB_OUTPUT"
+
+  # ===========================================================================
+  # VALIDATE — build the real application against the pin before it lands.
+  #
+  # This is the gate that replaces the pull request's own checks, and it exists
+  # because those checks cannot be relied on here. A pull request opened by
+  # GITHUB_TOKEN is attributed to github-actions[bot], which is not a repository
+  # collaborator, so under the default "first_time_contributors" fork-PR policy
+  # every workflow it triggers stops at `action_required` and waits for a human.
+  # Turning that policy off, enabling auto-merge or issuing a PAT would each fix
+  # it -- and each needs admin on the repository, which the people maintaining
+  # this pipeline do not necessarily have on the upstream fork.
+  #
+  # Calling build-app.yml from inside this run sidesteps all of it: a reusable
+  # workflow call is part of the run that is already executing, not a newly
+  # triggered event, so no approval gate applies. It is also a strictly better
+  # gate than the pull request would have got -- CodeQL and the documentation
+  # build say nothing about whether Qt links, whereas this compiles and packages
+  # UltraScan3 on all seven platform/profile combinations.
+  #
+  # fail-fast is off for the same reason as in nightly-build.yml: one platform
+  # breaking should still tell you the state of the other six.
+  # ===========================================================================
+  validate:
+    name: "Validate ${{ matrix.label }}"
+    needs: publish
+    if: needs.publish.outputs.pin_any == 'true' && needs.publish.outputs.pin_pr != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: ubuntu2404-x64,   profile: APP, label: "Ubuntu 24.04 APP",   platform: Ubuntu-24.04-x86_64 }
+          - { target: ubuntu2404-x64,   profile: HPC, label: "Ubuntu 24.04 HPC",   platform: HPC-Ubuntu-24.04-x86_64 }
+          - { target: oraclelinux8-x64, profile: APP, label: "Oracle Linux 8 APP", platform: RHEL-8-x86_64 }
+          - { target: oraclelinux8-x64, profile: HPC, label: "Oracle Linux 8 HPC", platform: HPC-RHEL-8-x86_64 }
+          - { target: macos-arm64,      profile: APP, label: "macOS arm64 APP",    platform: macOS-arm64 }
+          - { target: macos-x64,        profile: APP, label: "macOS x86_64 APP",   platform: macOS-x86_64 }
+          - { target: windows-x64,      profile: APP, label: "Windows x86_64 APP", platform: Windows-x86_64 }
+    uses: ./.github/workflows/build-app.yml
+    with:
+      target:                  ${{ matrix.target }}
+      profile:                 ${{ matrix.profile }}
+      qt_variant:              qt6
+      # The pin branch, not main: main still carries the OLD pin at this point,
+      # so building it would validate the toolchain we are replacing.
+      ref:                     ${{ needs.publish.outputs.pin_branch }}
+      # A cold tree is the point. An incremental build could reuse objects
+      # compiled against the previous toolchain and hide a real ABI break.
+      clean_tier:              clean
+      artifact_name:           ${{ format('toolchain-validate-{0}-{1}', github.run_id, matrix.platform) }}
+      artifact_retention_days: 3
+    secrets: inherit
+
+  # ===========================================================================
+  # LAND — merge the pin, or leave it open and say why.
+  #
+  # `gh pr merge` with GITHUB_TOKEN needs only the contents:write and
+  # pull-requests:write already declared above. It deliberately does NOT use
+  # --auto: that path requires auto-merge to be enabled on the repository and a
+  # branch protection rule to wait on, neither of which exists here. The checks
+  # have already passed in `validate`, so the merge is immediate and
+  # unconditional by design.
+  #
+  # --delete-branch removes the pin branch, which the repository would otherwise
+  # keep (delete_branch_on_merge is off). On failure the branch and the pull
+  # request both survive on purpose: they are the evidence needed to work out
+  # which platform the new toolchain broke.
+  # ===========================================================================
+  land:
+    name: "Land pin"
+    needs: [publish, validate]
+    if: always() && needs.publish.outputs.pin_pr != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 1 }
+
+      - name: Merge pin update
+        if: needs.validate.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.publish.outputs.pin_pr }}
+        run: |
+          set -euo pipefail
+          gh pr merge "$PR" --squash --delete-branch
+          echo "merged #$PR onto main"
+
+      - name: Hold pin update
+        if: needs.validate.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.publish.outputs.pin_pr }}
+          RESULT: ${{ needs.validate.result }}
+        run: |
+          set -euo pipefail
+          # --body-file with a here-doc rather than a multi-line --body: the
+          # message contains brackets, parentheses and asterisks, and a here-doc
+          # carries them without the backslash continuation and nested quoting
+          # that an inline argument would need.
+          gh pr comment "$PR" --body-file - <<EOF
+          Validation **${RESULT}**. Not merging.
+
+          Application builds against this toolchain did not all pass in
+          [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
+
+          This pull request and its branch are left in place deliberately: they
+          are what you need to work out which platform the new toolchain broke.
+          Application builds keep using the previous toolchain until this merges.
+          EOF
+
+          echo "::error::validation ${RESULT}; pin PR #${PR} left open"
+          exit 1
