@@ -155,7 +155,20 @@ jobs:
           else
             echo "cache=${RUNNER_TEMP}/us3-toolchain-cache" >> "$GITHUB_OUTPUT"
           fi
-          echo "asset=us3-toolchain-${{ matrix.target }}-qt6-v${{ needs.plan.outputs.version }}.tar.zst" >> "$GITHUB_OUTPUT"
+          # The build identifier in the asset name is what makes publishing
+          # non-destructive. Application builds resolve archives by the name
+          # recorded in the lock file, so a fixed name would mean this run
+          # overwrites the archive main is currently pinned to -- and if
+          # `validate` then fails, main keeps a pin whose bytes no longer
+          # exist and every macOS and Windows build breaks on the checksum.
+          # Naming per build lets the incumbent and its replacement coexist
+          # for the length of one run. `land` deletes the superseded one once
+          # the new pin is actually on main.
+          #
+          # run_attempt is included as well as run_id: re-running all jobs
+          # rebuilds the archive, and the new bytes must not take the name the
+          # previous attempt may already have pinned.
+          echo "asset=us3-toolchain-${{ matrix.target }}-qt6-v${{ needs.plan.outputs.version }}-${{ github.run_id }}.${{ github.run_attempt }}.tar.zst" >> "$GITHUB_OUTPUT"
 
       # Resume from whatever a previous attempt completed. This is what makes a
       # multi-hour cold build converge across retries instead of restarting.
@@ -278,7 +291,16 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6-v${{ needs.plan.outputs.version }}
+          # Two tags on purpose. The first is the moving "current" pointer and
+          # is what a human pulls. The second is immutable, and exists for the
+          # same reason the archives carry a build identifier: pushing a new
+          # image moves the moving tag off the manifest main is pinned to,
+          # leaving it untagged and eligible for registry garbage collection.
+          # Application builds pull by digest and would keep working either
+          # way, but only while those bytes survive.
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6-v${{ needs.plan.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6-v${{ needs.plan.outputs.version }}-${{ github.run_id }}.${{ github.run_attempt }}
           build-args: |
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
           # Layer cache lives in the registry, so an image rebuild after an
@@ -355,8 +377,15 @@ jobs:
               --prerelease
           fi
 
-          # --clobber: re-running the workflow for the same version replaces the
-          # asset rather than failing on a name collision.
+          # This upload adds to the release, it does not replace what is in it:
+          # archive names carry a build identifier, so the toolchain main is
+          # pinned to stays downloadable until `land` retires it.
+          #
+          # --clobber therefore no longer overwrites a previous toolchain -- the
+          # only name it can collide with is this same run and attempt's own
+          # archive. It is kept so that re-running just this job after a
+          # transient upload failure succeeds instead of erroring on a name
+          # that is already there.
           gh release upload "$TAG" "${ARCHIVES[@]}" --clobber
           gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)  \(.size)"'
 
@@ -525,6 +554,59 @@ jobs:
           set -euo pipefail
           gh pr merge "$PR" --squash --delete-branch
           echo "merged #$PR onto main"
+
+      # -----------------------------------------------------------------------
+      # Retire the toolchain the merge just replaced.
+      #
+      # Publishing is non-destructive so that a failed `validate` cannot strand
+      # main on a pin whose bytes are gone. That leaves the superseded archives
+      # behind, and at roughly 1.3 GB per build they are not something to
+      # accumulate. Collecting them here rather than in `publish` is the whole
+      # point: by this step the new pin is on main, so "no longer referenced"
+      # is a fact about the merged lock file and not a guess about what is
+      # about to happen.
+      # -----------------------------------------------------------------------
+      - name: Retire superseded toolchain archives
+        if: needs.validate.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Read the lock file from main as it stands after the merge, not from
+          # the pre-merge tree this job checked out.
+          gh api \
+            -H "Accept: application/vnd.github.raw" \
+            "repos/${GITHUB_REPOSITORY}/contents/buildsys/toolchain.lock.json?ref=main" \
+            > merged-lock.json
+
+          python3 - <<'PY'
+          import json, subprocess
+
+          lock = json.load(open("merged-lock.json"))
+          tag  = lock["release_tag"]
+          keep = {t["asset"] for t in lock["targets"].values() if t.get("asset")}
+
+          # A lock file that parsed but named no archives would make every asset
+          # look unreferenced. That is a bad lock file, not an empty release.
+          if not keep:
+              raise SystemExit(f"{tag}: merged lock file references no archives; refusing to delete")
+
+          print("referenced by main:", *sorted(keep), sep="\n  ")
+
+          assets = subprocess.run(
+              ["gh", "release", "view", tag, "--json", "assets", "--jq", ".assets[].name"],
+              check=True, capture_output=True, text=True,
+          ).stdout.split()
+
+          for name in assets:
+              # Only archives this workflow produces are ever candidates, so an
+              # unrelated asset added to the release by hand is left alone.
+              if not name.startswith("us3-toolchain-") or name in keep:
+                  continue
+              print("retiring:", name)
+              subprocess.run(["gh", "release", "delete-asset", tag, name, "--yes"], check=True)
+          PY
 
       - name: Hold pin update
         if: needs.validate.result != 'success'
