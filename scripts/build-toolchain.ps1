@@ -43,7 +43,6 @@ Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SourceDir = Split-Path -Parent $ScriptDir
-$LockFile  = Join-Path $SourceDir 'buildsys\toolchain.lock.json'
 
 # Triplet must match admin/cmake/toolchain.cmake, including its host-triplet
 # rule: host equals target, so the dependency graph is built once.
@@ -72,8 +71,8 @@ if (-not $SkipBootstrap) {
 # unpinned clone lets a vcpkg release silently change ABI hashes and invalidate
 # every cached package with no change in this repository.
 # -----------------------------------------------------------------------------
-$lock = Get-Content -Raw $LockFile | ConvertFrom-Json
-$VcpkgCommit = $lock.vcpkg_commit
+$VcpkgCommit = (Get-Content -Raw (Join-Path $SourceDir 'vcpkg.json') |
+                ConvertFrom-Json).'builtin-baseline'
 
 # Windows has a 260-character path limit that Qt's deep source trees run into,
 # so vcpkg lives at a short root rather than under the workspace.

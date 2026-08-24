@@ -446,7 +446,7 @@ if [ ! -d "$US3_VCPKG_ROOT/.git" ]; then
 fi
 
 # =============================================================================
-# Pin vcpkg to the commit recorded in buildsys/toolchain.lock.json.
+# Pin vcpkg to vcpkg.json's builtin-baseline.
 #
 # The commit pins the ports AND the tool: bootstrap-vcpkg resolves the tool
 # version from scripts/vcpkg-tool-metadata.txt at whatever is checked out.
@@ -459,8 +459,8 @@ fi
 # so this is a no-op on repeat builds.
 # =============================================================================
 US3_VCPKG_PIN="$(python3 -c \
-  "import json,sys;print(json.load(open(sys.argv[1]))['vcpkg_commit'])" \
-  "${SOURCE_DIR}/buildsys/toolchain.lock.json" 2>/dev/null || echo "")"
+  "import json,sys;print(json.load(open(sys.argv[1]))['builtin-baseline'])" \
+  "${SOURCE_DIR}/vcpkg.json" 2>/dev/null || echo "")"
 
 if [ -n "$US3_VCPKG_PIN" ]; then
   CURRENT_VCPKG="$(git -C "$US3_VCPKG_ROOT" rev-parse HEAD 2>/dev/null || echo "")"
@@ -475,7 +475,7 @@ if [ -n "$US3_VCPKG_PIN" ]; then
     rm -f "$US3_VCPKG_ROOT/vcpkg"
   fi
 else
-  echo "WARNING: could not read vcpkg_commit from buildsys/toolchain.lock.json;" >&2
+  echo "WARNING: could not read builtin-baseline from vcpkg.json;" >&2
   echo "         using whatever is checked out at $US3_VCPKG_ROOT." >&2
 fi
 

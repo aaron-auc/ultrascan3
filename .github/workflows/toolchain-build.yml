@@ -98,6 +98,7 @@ jobs:
           import json, os
 
           lock = json.load(open("buildsys/toolchain.lock.json"))
+          manifest = json.load(open("vcpkg.json"))
           sel = os.environ["SELECTED"]
 
           archives = [
@@ -118,7 +119,7 @@ jobs:
 
           print(f"version={lock['toolchain_version']}")
           print(f"release_tag={lock['release_tag']}")
-          print(f"vcpkg_commit={lock['vcpkg_commit']}")
+          print(f"vcpkg_commit={manifest['builtin-baseline']}")
           print("archive_matrix=" + json.dumps({"include": keep(archives)}))
           print("image_matrix="   + json.dumps({"include": keep(images)}))
           PY

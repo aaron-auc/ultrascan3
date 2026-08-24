@@ -35,7 +35,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-LOCK_FILE="${SOURCE_DIR}/buildsys/toolchain.lock.json"
 
 CACHE_DIR=""
 QT_VARIANT="qt6"
@@ -123,12 +122,16 @@ fi
 # -----------------------------------------------------------------------------
 # vcpkg at the pinned commit
 #
-# The commit pins the ports AND the tool: bootstrap-vcpkg resolves the tool
-# version from scripts/vcpkg-tool-metadata.txt at whatever is checked out. An
+# The commit is vcpkg.json's builtin-baseline -- one SHA in the repository, so
+# the ports baseline and the checked-out tool cannot drift apart.
+# It pins both: bootstrap-vcpkg resolves the tool version from
+# scripts/vcpkg-tool-metadata.txt at whatever is checked out. An
 # unpinned clone lets a vcpkg release silently change ABI hashes and invalidate
 # every cached package with no change in this repository.
 # -----------------------------------------------------------------------------
-VCPKG_COMMIT="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['vcpkg_commit'])" "$LOCK_FILE")"
+VCPKG_COMMIT="$(python3 -c \
+  "import json,sys;print(json.load(open(sys.argv[1]))['builtin-baseline'])" \
+  "${SOURCE_DIR}/vcpkg.json")"
 US3_VCPKG_ROOT="${US3_VCPKG_ROOT:-${HOME}/vcpkg}"
 
 if [ ! -d "$US3_VCPKG_ROOT/.git" ]; then

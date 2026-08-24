@@ -744,7 +744,7 @@ function Repair-VcpkgRepo {
     Write-Host "Repairing vcpkg repo at $VcpkgRoot ..." -ForegroundColor Yellow
 
     # Deliberately does NOT move off a detached HEAD: the clone is pinned to the
-    # commit in buildsys/toolchain.lock.json, and restoring the default branch
+    # builtin-baseline in vcpkg.json, and restoring the default branch
     # here would silently unpin it. reset --hard HEAD below is correct on a
     # detached HEAD -- it discards local damage while staying on the pin.
 
@@ -813,7 +813,7 @@ if (-not (Test-Path $VcpkgRoot)) {
 }
 
 # =============================================================================
-# Pin vcpkg to the commit recorded in buildsys/toolchain.lock.json.
+# Pin vcpkg to vcpkg.json's builtin-baseline.
 #
 # Must run before bootstrap: vcpkg.exe is built from whatever is checked out,
 # and the commit pins the tool as well as the ports -- bootstrap-vcpkg resolves
@@ -825,9 +825,9 @@ if (-not (Test-Path $VcpkgRoot)) {
 # every prebuilt package in the toolchain and turning a ten-minute build into a
 # from-source rebuild of Qt with no change in this repository.
 # =============================================================================
-$LockPath = Join-Path $SourceRoot 'buildsys\toolchain.lock.json'
-if (Test-Path $LockPath) {
-    $VcpkgPin = (Get-Content -Raw $LockPath | ConvertFrom-Json).vcpkg_commit
+$ManifestPath = Join-Path $SourceRoot 'vcpkg.json'
+if (Test-Path $ManifestPath) {
+    $VcpkgPin = (Get-Content -Raw $ManifestPath | ConvertFrom-Json).'builtin-baseline'
     $CurrentVcpkg = (git -C $VcpkgRoot rev-parse HEAD 2>$null)
     if ($CurrentVcpkg -ne $VcpkgPin) {
         Write-Host "Pinning vcpkg to $VcpkgPin (was $CurrentVcpkg)"
@@ -845,7 +845,7 @@ if (Test-Path $LockPath) {
         Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $VcpkgRoot 'vcpkg.exe')
     }
 } else {
-    Write-Warning "buildsys\toolchain.lock.json not found; using whatever vcpkg is checked out."
+    Write-Warning "vcpkg.json not found; using whatever vcpkg is checked out."
 }
 
 if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
