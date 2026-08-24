@@ -49,13 +49,13 @@
       "kind": "container",
       "image": "us3-toolchain-ubuntu2404",
       "tag": "qt6-v1",
-      "digest": "sha256:e049458ce239554f4e58eb5f674ecbfa932ff457ee35278fd745b8b81db05c8e"
+      "digest": "sha256:eaa6221f2c84093f5d68438f30b76859e49d99cbc476e0bb6cf2ad2666ef8359"
     },
     "oraclelinux8-x64": {
       "kind": "container",
       "image": "us3-toolchain-oraclelinux8",
       "tag": "qt6-v1",
-      "digest": "sha256:58a3de4d098051672d02ada5f3631e6f0f4d304b03aa3f0d18da0bd1c95d1f09"
+      "digest": "sha256:eae7669a9428d02b520d801d42a16174c92e5693b13c56d41a5b83fe4829bf3a"
     }
   }
 }
