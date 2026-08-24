@@ -2,23 +2,30 @@ name: UltraScan3 Nightly Build
 
 # ============================================================================
 # Scheduled nightly orchestration workflow.
-# Trigger: cron at 06:00 UTC daily; also supports workflow_dispatch for manual
-#          nightly runs.
 #
-# PHASE 0 — Gate (check-changes): decides whether the nightly build is needed.
-#   Skips all builds if no commits landed in the last 24h and the `nightly` tag
-#   already resolves to the current origin/main HEAD.
+# Trigger: cron at 06:00 UTC daily, plus workflow_dispatch for manual runs.
+# A manual run always builds; a scheduled run builds only when the gate below
+# says there is something new to build.
 #
-# PHASE 1-3 — Platform builds in three sequential groups (to stay within the
-#   10 GB Actions cache quota), each fanning out to the corresponding
-#   ./.github/workflows/build-<platform>.yml reusable workflow via workflow_call:
-#   Group 1 (parallel): ubuntu + macos-arm
-#   Group 2 (parallel, after Group 1): oraclelinux8 + macos-intel
-#   Group 3 (after Group 2): windows
+# PHASE 0 — Gate (check-changes)
+#   Resolves origin/main once and hands that SHA to every later job, so a
+#   commit landing mid-run cannot produce an artifact set mixed across two
+#   commits. Skips the build only when no commits landed in the last 24h AND
+#   the `nightly` tag already resolves to that SHA -- so a failed or deleted
+#   nightly is rebuilt on the next schedule rather than being skipped as
+#   "no changes".
 #
-# PHASE 4 — Publish (publish-release): runs only when all platform builds
-#   succeed. Downloads all run artifacts, renames to stable filenames, and
-#   overwrites the rolling `nightly` GitHub pre-release.
+# PHASE 1 — Build (build)
+#   One matrix job per target/profile, all in parallel, each calling
+#   ./.github/workflows/build-app.yml via workflow_call. No dependency is
+#   compiled here: every target pulls the prebuilt toolchain pinned in
+#   buildsys/toolchain.lock.json (a GHCR image on Linux, a release archive on
+#   macOS and Windows) and compiles only UltraScan3.
+#
+# PHASE 2 — Publish (publish-release)
+#   Runs only when every build job succeeds. Downloads the run's artifacts,
+#   renames them to stable filenames, and updates the rolling `nightly`
+#   GitHub pre-release in place.
 # ============================================================================
 
 run-name: >-
@@ -136,13 +143,17 @@ jobs:
           echo "has_changes=false" >> "$GITHUB_OUTPUT"
 
   # =========================================================================
-  # PLATFORM BUILDS
+  # PHASE 1 — PLATFORM BUILDS
   #
-  # All five targets run in parallel. The previous design ran them in three
-  # sequential groups to keep peak Actions-cache usage under the 10 GB quota;
-  # that constraint is gone because application builds no longer produce or
-  # consume a multi-gigabyte dependency cache. They pull a prebuilt toolchain
-  # pinned in buildsys/toolchain.lock.json and compile only UltraScan3.
+  # Seven jobs across five targets, all in parallel. An earlier design ran
+  # them in three sequential groups to keep peak Actions-cache usage under the
+  # 10 GB quota. That constraint no longer exists: application builds neither
+  # produce nor consume a multi-gigabyte dependency cache, because the
+  # dependency toolchain is built once by toolchain-build.yml and consumed
+  # here by pin.
+  #
+  # fail-fast is off deliberately -- one platform breaking should still tell
+  # you the state of the other six.
   # =========================================================================
 
   build:
@@ -172,7 +183,7 @@ jobs:
     secrets: inherit
 
   # =========================================================================
-  # PHASE 4 — PUBLISH RELEASE
+  # PHASE 2 — PUBLISH RELEASE
   # Runs only when all builds succeed. Downloads all run artifacts, renames
   # each to a unique filename, then updates the rolling `nightly` GitHub
   # Release in place. New assets are uploaded and verified before the tag,
