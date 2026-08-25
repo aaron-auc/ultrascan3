@@ -52,6 +52,7 @@ on:
       - "buildsys/vcpkg/overlay-ports/**"
       - "qwtplot3d/**"
       - "admin/cmake/triplets/**"
+      - "admin/cmake/toolchain.cmake"
       - "buildsys/docker/**"
       - "scripts/build-toolchain.sh"
       - "scripts/build-toolchain.ps1"
@@ -69,13 +70,12 @@ concurrency:
 jobs:
 
   # ===========================================================================
-  # Resolve the pin once so every job agrees on version, tag and image names.
+  # Resolve the pin once so every job agrees on tag and image names.
   # ===========================================================================
   plan:
     name: "Plan"
     runs-on: ubuntu-24.04
     outputs:
-      version:        ${{ steps.lock.outputs.version }}
       release_tag:    ${{ steps.lock.outputs.release_tag }}
       vcpkg_commit:   ${{ steps.lock.outputs.vcpkg_commit }}
       archive_matrix: ${{ steps.lock.outputs.archive_matrix }}
@@ -118,7 +118,6 @@ jobs:
 
           keep = lambda rows: [r for r in rows if sel in ("all", r["group"])]
 
-          print(f"version={lock['toolchain_version']}")
           print(f"release_tag={lock['release_tag']}")
           print(f"vcpkg_commit={manifest['builtin-baseline']}")
           print("archive_matrix=" + json.dumps({"include": keep(archives)}))
@@ -168,7 +167,7 @@ jobs:
           # run_attempt is included as well as run_id: re-running all jobs
           # rebuilds the archive, and the new bytes must not take the name the
           # previous attempt may already have pinned.
-          echo "asset=us3-toolchain-${{ matrix.target }}-qt6-v${{ needs.plan.outputs.version }}-${{ github.run_id }}.${{ github.run_attempt }}.tar.zst" >> "$GITHUB_OUTPUT"
+          echo "asset=us3-toolchain-${{ matrix.target }}-qt6-${{ github.run_id }}.${{ github.run_attempt }}.tar.zst" >> "$GITHUB_OUTPUT"
 
       # Resume from whatever a previous attempt completed. This is what makes a
       # multi-hour cold build converge across retries instead of restarting.
@@ -176,10 +175,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ steps.paths.outputs.cache }}
-          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'qwtplot3d/**', 'admin/cmake/triplets/**') }}
+          key: us3-toolchain-wip-${{ matrix.target }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'qwtplot3d/**', 'admin/cmake/triplets/**', 'admin/cmake/toolchain.cmake') }}
           restore-keys: |
-            us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-
-            us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-
+            us3-toolchain-wip-${{ matrix.target }}-${{ needs.plan.outputs.vcpkg_commit }}-
+            us3-toolchain-wip-${{ matrix.target }}-
 
       - name: Free disk space (macOS)
         if: runner.os == 'macOS'
@@ -219,7 +218,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ steps.paths.outputs.cache }}
-          key: us3-toolchain-wip-${{ matrix.target }}-v${{ needs.plan.outputs.version }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'qwtplot3d/**', 'admin/cmake/triplets/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: us3-toolchain-wip-${{ matrix.target }}-${{ needs.plan.outputs.vcpkg_commit }}-${{ hashFiles('vcpkg.json', 'buildsys/vcpkg/overlay-ports/**', 'qwtplot3d/**', 'admin/cmake/triplets/**', 'admin/cmake/toolchain.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Archive toolchain
         shell: bash
@@ -299,8 +298,8 @@ jobs:
           # Application builds pull by digest and would keep working either
           # way, but only while those bytes survive.
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6-v${{ needs.plan.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6-v${{ needs.plan.outputs.version }}-${{ github.run_id }}.${{ github.run_attempt }}
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:qt6-${{ github.run_id }}.${{ github.run_attempt }}
           build-args: |
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
           # Layer cache lives in the registry, so an image rebuild after an
@@ -372,7 +371,7 @@ jobs:
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
-              --title "UltraScan3 dependency toolchain ${TAG}" \
+              --title "UltraScan3 dependency toolchain" \
               --notes "Prebuilt Qt6 and C dependencies consumed by application builds. Pinned in buildsys/toolchain.lock.json." \
               --prerelease
           fi
@@ -443,15 +442,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BRANCH="toolchain/pin-v${{ needs.plan.outputs.version }}-${GITHUB_RUN_ID}"
+          BRANCH="toolchain/pin-${GITHUB_RUN_ID}"
+
+          # Title and commit subject name the targets this run actually changed,
+          # and the run that built them. The previous form was derived only from
+          # the release tag, which is a constant -- so every pin pull request
+          # ever opened carried an identical title and was indistinguishable
+          # from the last one in the list.
+          # Naming the targets is the useful part when one or two moved, which
+          # is the common case. A full rebuild moves all five and the names stop
+          # fitting a subject line, so past three it degrades to a count and the
+          # body carries the list either way.
+          CHANGED="${{ steps.pin.outputs.changed }}"
+          COUNT=$(printf '%s\n' $CHANGED | wc -w | tr -d ' ')
+          if [ "$COUNT" -le 3 ]; then
+            WHAT=$(printf '%s\n' $CHANGED | paste -sd, - | sed 's/,/, /g')
+          else
+            WHAT="${COUNT} targets"
+          fi
+          SUBJECT="Update dependency toolchain pin for ${WHAT} (run ${GITHUB_RUN_ID})"
+
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add buildsys/toolchain.lock.json
-          git commit -m "Update dependency toolchain pin for ${{ needs.plan.outputs.release_tag }}"
+          git commit -m "$SUBJECT"
           git push origin "$BRANCH"
           gh pr create \
-            --title "Update dependency toolchain pin (${{ needs.plan.outputs.release_tag }})" \
+            --title "$SUBJECT" \
             --body "Built by the Toolchain workflow (run ${GITHUB_RUN_ID}).
 
           Updated targets: ${{ steps.pin.outputs.changed }}

@@ -11,10 +11,13 @@
     "and merge the pin update it produces. That is the only",
     "moment Qt gets compiled.",
     "",
-    "toolchain_version is the cache epoch. Bump it to deliberately discard every",
-    "cached artifact -- for example after changing triplet selection in",
-    "admin/cmake/toolchain.cmake, which affects dependency ABI but is not part",
-    "of the cache fingerprint.",
+    "'asset' names carry the run that produced them, so publishing a new",
+    "toolchain never overwrites the one pinned here. The workflow retires the",
+    "superseded archives only after this file has been updated on main.",
+    "",
+    "There is no toolchain version. Everything that affects dependency ABI is",
+    "part of the cache fingerprint, so a rebuild is triggered by content rather",
+    "than by a number someone has to remember to bump.",
     "",
     "Container 'image' is the bare package name, NOT a full registry path.",
     "The owner is supplied at runtime from github.repository_owner so this",
@@ -27,8 +30,7 @@
     "also pins the tool, because bootstrap-vcpkg resolves the tool version",
     "from scripts/vcpkg-tool-metadata.txt at whatever is checked out."
   ],
-  "toolchain_version": 1,
-  "release_tag": "toolchain-v1",
+  "release_tag": "toolchain",
   "targets": {
     "macos-arm64": {
       "kind": "archive",
@@ -48,13 +50,11 @@
     "ubuntu2404-x64": {
       "kind": "container",
       "image": "us3-toolchain-ubuntu2404",
-      "tag": "qt6-v1",
       "digest": "sha256:33e6d7a396ea995b3f9a57b8065104afb1bf09876d92139a8e2961203d388952"
     },
     "oraclelinux8-x64": {
       "kind": "container",
       "image": "us3-toolchain-oraclelinux8",
-      "tag": "qt6-v1",
       "digest": "sha256:9b5fc78cae79e464e61e880ba2eb0b1c7bfb64bc193fe2ee97c1141477cb1fae"
     }
   }

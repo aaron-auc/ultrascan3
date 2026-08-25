@@ -96,7 +96,7 @@ esac
 # -----------------------------------------------------------------------------
 # Read the pin
 # -----------------------------------------------------------------------------
-read -r KIND ASSET SHA256 IMAGE DIGEST TAG RELEASE_TAG < <(
+read -r KIND ASSET SHA256 IMAGE DIGEST RELEASE_TAG < <(
   python3 - "$LOCK_FILE" "$TARGET" <<'PY'
 import json, sys
 lock = json.load(open(sys.argv[1]))
@@ -110,7 +110,6 @@ fields = [
     target.get("sha256", "") or "-",
     target.get("image", "-"),
     target.get("digest", "") or "-",
-    target.get("tag", "-"),
     lock.get("release_tag", "-"),
 ]
 print(" ".join(str(f) if f else "-" for f in fields))
@@ -124,7 +123,7 @@ if [ "$KIND" = "container" ]; then
   BAKED="${US3_VCPKG_CACHE:-/opt/us3-toolchain/vcpkg-cache}"
   if [ ! -d "$BAKED" ]; then
     echo "ERROR: expected the toolchain baked into this image at $BAKED" >&2
-    echo "       Target '$TARGET' is pinned to ${IMAGE}:${TAG}." >&2
+    echo "       Target '$TARGET' is pinned to ${IMAGE}@${DIGEST}." >&2
     echo "       Are you running outside the toolchain container?" >&2
     exit 1
   fi
